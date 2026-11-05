@@ -227,8 +227,8 @@ await runChecks(browser, async () => {
   const ticks = await evaluate(`[...${PANEL}.querySelectorAll('label.check')].filter(l => l.checkVisibility()).map(l => { const b = l.querySelector('input').getBoundingClientRect(), words = document.createRange();
     words.selectNodeContents(l.lastChild); const r = n => Math.round(n * 10) / 10;
     return { label: l.textContent, left: r(b.left), width: r(b.width), height: r(b.height), words: r(words.getClientRects()[0].left), lines: words.getClientRects().length }; })`);
-  const two = ticks.filter(t => /^(Replay snapshots|Complete transition archive) \(/.test(t.label));
-  check('every tick box of Output settings has the same size and place, and its words start at the same x - also beside words of two lines, "Replay snapshots (...)" and "Complete transition archive (...)" (SIF-143)',
+  const two = ticks.filter(t => /^(Replay snapshots|Complete transition archive)$/.test(t.label));
+  check('every tick box of Output settings has the same size, place and text alignment (SIF-143)',
     ticks.length === 5 && two.length === 2 && ticks.every(t => ['left', 'width', 'height', 'words'].every(k => Math.abs(t[k] - ticks[0][k]) < 0.5)), JSON.stringify(ticks));
   const whole = await evaluate(`(() => { const td = [...${PANEL}.querySelectorAll('details.output-facts td')].find(td => td.textContent.includes('used here')), line = ${PANEL}.querySelector('details.output-facts > summary .bytes');
     return td && { text: td.textContent, sizes: [...td.querySelectorAll('.bytes')].map(s => [s.textContent, s.getClientRects().length]), line: line && [line.textContent, getComputedStyle(line).whiteSpace] }; })()`);
@@ -339,8 +339,8 @@ await runChecks(browser, async () => {
 
   // ---- "Replay snapshots": Continue... and the Modes by their names (branch record SIF-60) -----------------------------------
   const REPLAY = `[...${PANEL}.querySelectorAll('label.check')].find(l => l.textContent.startsWith('Replay snapshots'))`;
-  check('"Replay snapshots" says what it is needed for: "Replay snapshots (needed to Continue a run exactly)" (it said "a FULL resume")',
-    (await evaluate(`${REPLAY}?.textContent`)) === 'Replay snapshots (needed to Continue a run exactly)', await evaluate(`${REPLAY}?.textContent ?? 'no such box'`));
+  check('Replay snapshots keeps its short label and explains exact Continue in its tooltip',
+    await evaluate(`${REPLAY}?.textContent === 'Replay snapshots' && ${REPLAY}?.title === 'Needed to Continue a run exactly.'`));
   await evaluate(`${REPLAY}.querySelector('input').click()`);
   const replayWarn = await until(`[...${PANEL}.querySelectorAll('p.warn')].some(p => p.textContent.startsWith('Without replay snapshots'))`, 30)
     ? await evaluate(`[...${PANEL}.querySelectorAll('p.warn')].find(p => p.textContent.startsWith('Without replay snapshots')).textContent`) : null;

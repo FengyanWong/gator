@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { call, type Json } from '../api';
 import { Icon } from './Icons';
-import './AgentTab.css';
 
 type Model = { id: string; name: string; provider: string; source: string; description: string; size: number;
   installed: boolean; deployed: boolean; storage: string | null; error: string | null; runtime: string; vram_gib: number; ram_gib: number };
@@ -25,6 +24,7 @@ export function AgentTab({ hidden, config, setConfig }: { hidden: boolean; confi
   const [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [jobId, setJobId] = useState<string | null>(null), [job, setJob] = useState<Job | null>(null);
   const [stream, setStream] = useState(''), [messages, setMessages] = useState<Message[]>([]), [draft, setDraft] = useState('');
+  const [liveOpen, setLiveOpen] = useState(false);
   const [applied, setApplied] = useState<Record<string, boolean>>({});
   const [pendingApply, setPendingApply] = useState<{ id: string; next: Json } | null>(null);
   const generation = useRef<Record<string, { revision: number; config: Json }>>({});
@@ -37,7 +37,7 @@ export function AgentTab({ hidden, config, setConfig }: { hidden: boolean; confi
     if (!pendingApply) return;
     if (config === pendingApply.next) {
       setApplied(v => ({ ...v, [pendingApply.id]: true }));
-      setNotice('Changes applied as one Undo step. Save the task normally when ready.');
+      setNotice('Changes applied as one Undo step. Save the task when ready.');
     } else {
       setError('The editor changed before application. No proposed changes were applied.');
     }
@@ -78,6 +78,7 @@ export function AgentTab({ hidden, config, setConfig }: { hidden: boolean; confi
         offset.current = next.offset;
         setJob(next); setStream(s => s + next.output);
         if (next.state !== 'running') {
+          setStream(''); setLiveOpen(false); // The completed answer lives in messages; release the temporary stream.
           if (!finished.current.has(jobId)) {
             finished.current.add(jobId);
             if (next.kind === 'chat' && next.state === 'completed' && next.result) {
@@ -150,19 +151,32 @@ export function AgentTab({ hidden, config, setConfig }: { hidden: boolean; confi
     try { await call('POST', `${root}/jobs/${jobId}/cancel`); }
     catch (e) { setError(errorText(e)); }
   };
+  const newConversation = () => {
+    setMessages([]); setStream(''); setJob(null); setApplied({});
+    generation.current = {}; finished.current.clear();
+    setNotice('New conversation. Current editor configuration will be included.');
+  };
 
   return <section className="agent-panel" hidden={hidden} aria-label="Local Agent">
-    <div className="agent-heading"><strong>Agent</strong><span>Local advice for parameter setup and optimization settings</span></div>
-    <p className="agent-note">Choose a model, check compatibility, install and deploy. Answers have no token limit. You review every change before applying it.</p>
+    <div className="agent-heading"><strong>Agent</strong><span>A language model on this computer that advises on parameters and run settings</span></div>
+    <p className="agent-note">Install a model once, deploy it, then ask. Every suggestion is shown as a table of changes first; nothing
+      changes until you press Apply changes, and Undo takes it back. The Agent never starts a simulation.</p>
     {error && <p className="agent-error" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    {!status && <p>Loading local model catalog…</p>}
+    {!status && <p>Reading the list of models…</p>}
     <div className="agent-columns">
       <div className="agent-catalog" aria-label="NVIDIA model catalog">
+        <h4 className="agent-column-title">Models</h4>
         {status?.models.map(model => <article className="agent-model" key={model.id}>
-          <div className="agent-model-heading"><strong>{model.name}</strong><span>{model.deployed ? 'Ready · loads per reply' : model.installed ? 'Installed' : 'Not installed'}</span></div>
-          <p>{model.description} <a href={model.source} target="_blank" rel="noreferrer">NVIDIA model card</a></p>
-          <p className="agent-note">{gib(model.size)} download · {model.vram_gib} GiB free VRAM · {model.ram_gib} GiB RAM<br />{model.runtime}</p>
+          <div className="agent-model-heading"><strong>{model.name}</strong>
+            <span className={`agent-state${model.deployed ? ' ready' : ''}`}>{model.deployed ? 'Ready · loads per reply' : model.installed ? 'Installed' : 'Not installed'}</span></div>
+          <p>{model.description}</p>
+          <table className="agent-needs"><tbody>
+            <tr><th scope="row">Download</th><td>{gib(model.size)}</td></tr>
+            <tr><th scope="row">Needs</th><td>{model.vram_gib} GiB free GPU memory and {model.ram_gib} GiB RAM</td></tr>
+            <tr><th scope="row">Runs with</th><td>{model.runtime}</td></tr>
+            <tr><th scope="row">Source</th><td><a href={model.source} target="_blank" rel="noreferrer">NVIDIA model card</a></td></tr>
+          </tbody></table>
           <div className="agent-controls">
             <button title={`Check compatibility for ${model.name}`} disabled={busy || active} onClick={() => void operate(model, 'check')}><Icon name="refresh" label={`Check compatibility for ${model.name}`} /></button>
             <button title={`Install ${model.name}`} disabled={busy || active || model.installed} onClick={() => void operate(model, 'install')}><Icon name="download" label={`Install ${model.name}`} /></button>
@@ -170,27 +184,32 @@ export function AgentTab({ hidden, config, setConfig }: { hidden: boolean; confi
             <button title={`Undeploy ${model.name}`} disabled={busy || !(model.deployed || active && job?.kind === 'deploy' && job.model_id === model.id)} onClick={() => void operate(model, 'undeploy')}><Icon name="stop" label={`Undeploy ${model.name}`} /></button>
             <button title={model.storage === 'external' ? `Delete registration for ${model.name}; keep external file` : `Delete ${model.name}`} disabled={busy || active || !model.installed || model.deployed} onClick={() => void operate(model, 'delete')}><Icon name="delete" label={`Delete ${model.name}`} /></button>
           </div>
-          {model.storage === 'external' && <p className="agent-note">Uses verified external weights. Delete removes registration and preserves the file.</p>}
+          {model.storage === 'external' && <p className="agent-note">The model file lives outside the workbench: Delete forgets it here and keeps the file.</p>}
           {checks[model.id] && <div className="agent-check" role="status">
-            <strong>{checks[model.id].compatible ? 'Compatibility check passed' : 'Not compatible now'}</strong>
-            <p>{checks[model.id].host.gpus.map(g => `${g.name}: ${gib(g.free)} free VRAM`).join('; ') || 'GPU unknown'}<br />
-              RAM: {gib(checks[model.id].host.ram_free)} available / {gib(checks[model.id].host.ram_total)} total. Storage: {gib(checks[model.id].host.disk_free)} free.</p>
-            {checks[model.id].errors.map((e, i) => <p key={i}>{e}</p>)}
-            <p>{checks[model.id].local_asset_available ? 'An existing local artifact will be checked by SHA-256 and reused.' : 'The pinned NVIDIA artifact will be downloaded.'} {checks[model.id].note}</p>
+            <strong>{checks[model.id].compatible ? 'This computer can run it' : 'This computer cannot run it now'}</strong>
+            <ul>
+              <li>{checks[model.id].host.gpus.length ? checks[model.id].host.gpus.map(g => `${g.name}: ${gib(g.free)} of GPU memory free`).join('; ') : 'No GPU found'}</li>
+              <li>RAM: {gib(checks[model.id].host.ram_free)} free of {gib(checks[model.id].host.ram_total)}</li>
+              <li>Disk: {gib(checks[model.id].host.disk_free)} free</li>
+              {checks[model.id].errors.map((e, i) => <li key={i} className="agent-error">{e}</li>)}
+            </ul>
+            <p>{checks[model.id].local_asset_available ? 'A model file is already on this computer; its checksum is verified before it is used.' : 'The model file is downloaded from NVIDIA and its checksum verified.'} {checks[model.id].note}</p>
           </div>}
           {model.error && <p className="agent-error">{model.error}</p>}
         </article>)}
       </div>
       <div className="agent-conversation">
+        <h4 className="agent-column-title">Conversation</h4>
         {active && <div className="agent-operation" role="status"><strong>{job?.phase || 'Starting…'}</strong>
-          {job?.total ? <><progress max={job.total} value={job.bytes} aria-label="Installation progress" /><span>{gib(job.bytes)} / {gib(job.total)}</span></> : <span>Waiting for local operation</span>}
+          {job?.total ? <><progress max={job.total} value={job.bytes} aria-label="Installation progress" /><span>{gib(job.bytes)} of {gib(job.total)}</span></> : <span>Working on this computer…</span>}
           <button onClick={() => void cancel()} title="Cancel Agent operation"><Icon name="stop" label="Cancel Agent operation" /></button>
         </div>}
-        {active && stream && <details className="agent-live"><summary>Live model output</summary><pre>{stream}</pre></details>}
+        {active && stream && <details className="agent-live" onToggle={e => setLiveOpen(e.currentTarget.open)}>
+          <summary>Live model output</summary>{liveOpen && <pre>{stream}</pre>}</details>}
         <div className="agent-messages" aria-label="Agent conversation">
           {messages.map((m, i) => <article key={i} className={`agent-message ${m.role}`}>
             <strong>{m.role === 'user' ? 'You' : 'Agent'}</strong><p>{m.content}</p>
-            {m.result?.omitted_messages ? <p className="agent-note">Continued with current configuration and recent messages; {m.result.omitted_messages} older messages were outside this input window.</p> : null}
+            {m.result?.omitted_messages ? <p className="agent-note">The model saw the current configuration and the newest messages; {m.result.omitted_messages} older messages no longer fit its memory.</p> : null}
             {m.result?.proposal_error && <p className="agent-error" role="alert">Suggestion rejected: {m.result.proposal_error}</p>}
             {m.result?.preview && m.job && <div className="agent-proposal">
               <strong>Proposed editor changes</strong><table><thead><tr><th>Setting</th><th>Current</th><th>Proposed</th></tr></thead><tbody>
@@ -198,18 +217,22 @@ export function AgentTab({ hidden, config, setConfig }: { hidden: boolean; confi
               </tbody></table>
               {m.result.preview.warnings.map((w, n) => <p key={n} className="agent-note">{w.message}</p>)}
               <button disabled={busy || active || applied[m.job] || generation.current[m.job]?.revision !== current.current.revision}
-                onClick={() => void apply(m.job!)}>Apply proposed changes</button>
-              {applied[m.job] ? <span> Applied through the editor</span> : generation.current[m.job]?.revision !== current.current.revision ? <span> Stale suggestion — ask again</span> : <span> Revalidated when applied · Undo available</span>}
+                onClick={() => void apply(m.job!)}>Apply changes</button>
+              {applied[m.job] ? <span className="agent-proposal-state">Applied through the editor</span> : generation.current[m.job]?.revision !== current.current.revision ? <span className="agent-proposal-state">Stale suggestion: the editor changed since, ask again</span> : <span className="agent-proposal-state">Checked again when applied; Undo takes it back</span>}
             </div>}
           </article>)}
         </div>
         {status?.deployed ? <form className="agent-compose" onSubmit={e => { e.preventDefault(); void send(); }}>
-          <label htmlFor="agent-message">Ask about parameter setup or optimization settings</label>
+          <label htmlFor="agent-message">Ask the Agent</label>
           <textarea id="agent-message" value={draft} onChange={e => setDraft(e.target.value)} rows={3} disabled={busy || active} />
-          <div><button type="submit" disabled={busy || active || !draft.trim()}>Send</button>
-            <button type="button" disabled={busy || active} onClick={() => { setMessages([]); setStream(''); setNotice('New conversation. Current editor configuration will be included.'); }}>New conversation</button></div>
-          <p className="agent-note">8,192-token context with shifting; no answer-token budget. Older turns may leave the input window. Cancel stops the owned local process.</p>
-        </form> : <p className="agent-empty">Install and deploy a model to start a conversation.</p>}
+          <div><button type="submit" title="Send: Ask the local Agent." disabled={busy || active || !draft.trim()}><Icon name="send" label="Send" /></button>
+            <button type="button" title="New conversation: Clear this chat and keep the editor's settings." disabled={busy || active} onClick={newConversation}><Icon name="chat" label="New conversation" /></button></div>
+          <p className="agent-note">The model reads the current editor settings with your message. It remembers about 8,000 words of the
+            conversation; older messages drop out, and it says so. Answers have no length limit: Cancel stops one.</p>
+        </form> : <div className="agent-empty"><p>Install and deploy a model to chat.</p>
+          <ol><li>Press <strong>Check compatibility</strong> on a model to see whether this computer can run it.</li>
+            <li><strong>Install</strong> downloads it once (or finds a copy already here) and verifies it.</li>
+            <li><strong>Deploy</strong> loads it for a test reply; then the message box appears.</li></ol></div>}
       </div>
     </div>
   </section>;

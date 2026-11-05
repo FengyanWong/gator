@@ -4,7 +4,7 @@ import test from 'node:test';
 import { fillCells, pasteCells, readPastedCell } from '../src/panels/editorSheet.ts';
 import { prepareImport } from '../src/panels/editorImport.ts';
 import { setUnitForms } from '../src/units.ts';
-import { idList, unsavedSummary } from '../src/panels/editorChanges.ts';
+import { idList, indexUnsavedRows, unsavedSummary } from '../src/panels/editorChanges.ts';
 import { limitLabel, limitUses } from '../src/panels/editorRules.ts';
 
 setUnitForms({ spellings: { m: ['m', 1, 0], nm: ['m', 1e-9, 0], V: ['V', 1, 0] },
@@ -108,6 +108,50 @@ test('saved-row summaries handle absent reports, no changes, singular deletion a
     assert.equal(unsavedSummary({ removed: ['one'] }, detail), '1 saved row deleted here (one)');
     assert.equal(unsavedSummary({ reordered: true }, detail), 'rows in another order');
   }
+});
+
+test('unsaved row indexes preserve marks and tied counts with missing, duplicate and non-string IDs', () => {
+  const rows = [{ variable_id: 'leader' }, { variable_id: 'leader' }, { variable_id: 'new', binding_group: 'leader' },
+    { variable_id: 'new', binding_group: 'leader' }, { variable_id: 'changed', binding_group: 'leader' },
+    { variable_id: 'orphan', binding_group: 'missing' }, { variable_id: 7 }, { variable_id: '7' },
+    { variable_id: 8, binding_group: '7' }, { variable_id: null, binding_group: 'leader' },
+    { binding_group: 'leader' }, { variable_id: '', binding_group: '' }, { variable_id: 'self', binding_group: 'self' }];
+  const report = { added: ['new', 'new', '7', '8', ''], removed: [],
+    changed: { changed: { fields: { lower: 2 } }, orphan: { fields: { upper: 4 } }, self: { fields: { ratio: 2 } } } };
+  const before = structuredClone({ rows, report });
+  const ids = new Set(rows.map(row => row.variable_id));
+  for (const parameters of [true, false]) {
+    const leaderOf = row => parameters && row.binding_group && ids.has(row.binding_group) ? row.binding_group : null;
+    for (const unsaved of [report, null, undefined, {}, { added: [], changed: {} }]) {
+      const indexed = indexUnsavedRows(rows, 'variable_id', unsaved, leaderOf);
+      const wasNew = row => !!unsaved?.added?.includes(String(row.variable_id ?? ''));
+      const wasChanged = row => unsaved?.changed?.[String(row.variable_id ?? '')] ?? null;
+      for (const row of rows) {
+        assert.equal(indexed.isNew(row), wasNew(row));
+        assert.equal(indexed.changeOf(row), wasChanged(row));
+        const tied = rows.some(follower => !!leaderOf(follower) && leaderOf(follower) === row.variable_id);
+        const count = tied ? rows.filter(follower => leaderOf(follower) === row.variable_id && (wasNew(follower) || wasChanged(follower))).length : 0;
+        assert.equal(indexed.unsavedTies.get(row.variable_id) ?? 0, count);
+      }
+    }
+  }
+  const indexed = indexUnsavedRows(rows, 'variable_id', report, row => row.binding_group && ids.has(row.binding_group) ? row.binding_group : null);
+  assert.equal(indexed.unsavedTies.get('leader'), 5); // Two duplicate new rows, one changed row and two empty IDs.
+  assert.equal(indexed.unsavedTies.has('missing'), false);
+  assert.equal(indexed.unsavedTies.get('7'), 1);
+  assert.equal(indexed.unsavedTies.has(7), false); // Saved marks normalize IDs; ties keep the editor's exact keys.
+  assert.deepEqual({ rows, report }, before);
+});
+
+test('unsaved follower lookup visits each row at most once regardless of the number of leaders', () => {
+  const rows = Array.from({ length: 200 }, (_, i) => [
+    { variable_id: `leader${i}` }, { variable_id: `follower${i}`, binding_group: `leader${i}` },
+  ]).flat();
+  const report = { added: rows.map(row => row.variable_id), changed: {}, removed: [] };
+  let visits = 0;
+  const indexed = indexUnsavedRows(rows, 'variable_id', report, row => { visits++; return row.binding_group ?? null; });
+  for (let i = 0; i < 200; i++) assert.equal(indexed.unsavedTies.get(`leader${i}`), 1);
+  assert.equal(visits, rows.length);
 });
 
 test('missing and legacy limit values remain visible without inventing a supported constraint', () => {

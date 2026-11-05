@@ -603,7 +603,7 @@ function runBrowser(parts: RunWindowParts) {
           <TableHead view={table} columns={COLUMNS} shown={shown} id={row => row.run_dir} what="runs" disabled={folders.busy || !folders.ready} />
           {/* RunRow draws a run's row; its Details stay here, outside the memo, drawn with the window as before (branch record SIF-122) */}
           <tbody>{shown.map(row => <Fragment key={row.run_dir}>
-            <RunRow r={row} active={row.run_dir === runDir} checked={selected.includes(row.run_dir)} isOpen={open === row.run_dir}
+            <RunRow r={row} active={row.run_dir === runDir} checked={table.selectedIds.has(row.run_dir)} isOpen={open === row.run_dir}
               folderLabel={folders.folder === 'all' ? (folders.data.folders[folders.of(row.run_dir)] ?? '') : ''} disabled={folders.busy || !folders.ready}
               byDir={byDir} act={rowAct} />
             {open === row.run_dir && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>

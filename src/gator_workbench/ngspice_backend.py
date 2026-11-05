@@ -26,7 +26,6 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
-import hashlib
 import math
 import os
 from pathlib import Path
@@ -47,7 +46,7 @@ from .simulation_artifacts import SimulationArtifacts
 from .ngspice_analysis import counts, instrument as instrument_analyses
 from .ngspice_link import PROGRAM, SSH_HOST, VERSION, scrub_host as _scrub, ssh_argv
 from .ngspice_operating_points import instrument, read as read_operating_points
-from .storage.atomic import write_json
+from .storage.atomic import sha256_file, write_json
 
 BACKEND_KIND = 'ngspice-batch-v1'
 LOCAL_CONCURRENCY = max(1, min(8, (os.cpu_count() or 2) // 2))     # ngspice jobs on this machine at once
@@ -222,7 +221,7 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         directory.mkdir(parents=True)
         path = directory / 'deck.cir'
         path.write_text(instrument_analyses(instrument(self.deck(), self.graph)), encoding='utf8')
-        artifact = NetlistArtifact(path, job_id, hashlib.sha256(path.read_bytes()).hexdigest(), 'real', self.condition)
+        artifact = NetlistArtifact(path, job_id, sha256_file(path), 'real', self.condition)
         self.exports[job_id] = (artifact, dict(self.parameters))
         self.timings['netlisting'] = perf_counter() - started
         return artifact
@@ -231,7 +230,7 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         """The written deck read again: the same circuit, the new values - proof that the write landed."""
         self._check()
         saved, values = self.exports[artifact.job_id]
-        if artifact != saved or hashlib.sha256(artifact.path.read_bytes()).hexdigest() != artifact.sha256:
+        if artifact != saved or sha256_file(artifact.path) != artifact.sha256:
             raise ValueError('ngspice deck identity changed')
         again = ngspice_netlist.parse_text(artifact.path.read_text(encoding='utf8'), source=self.source,
                                            circuit_id=self.circuit_id,

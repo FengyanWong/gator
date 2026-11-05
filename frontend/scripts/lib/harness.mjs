@@ -198,6 +198,8 @@ async function connect(target, { errors = [], prefix = '', consoleApi = true } =
     } else for (const fn of listeners.get(m.method) ?? []) run(fn, m.params);
   };
   // A click that closes its own window may never be acknowledged: a closing session rejects what is still waiting.
+  // So a check closes a window with setTimeout(() => window.close(), 0): the evaluate is answered before the window
+  // goes (record 7.471; evaluating window.close() itself raced and stopped pdk_check about one run in three).
   ws.onclose = () => { closed = true; for (const p of pending.values()) p.reject(cdpError('the DevTools session closed (its window went away)')); pending.clear(); };
   const send = (method, params = {}) => new Promise((resolve, reject) => {
     if (closed) return reject(cdpError(`${method}: the DevTools session is closed`));

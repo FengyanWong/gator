@@ -5,10 +5,12 @@ import type { Json } from '../api';
 import { Module } from './fields';
 import { PopupPortal } from './popupParts';
 import { RewardConditions } from './RewardConditions';
-import { RlModelWindow } from './RlModelWindow';
+import { deferredPanel } from './deferredPanel';
 import type { NextModel } from './rlModelText';
 import { RunConfiguration } from './RunConfiguration';
 import { useRlModel } from './useRlModel';
+
+const RlModelWindow = deferredPanel(() => import('./RlModelWindow').then(m => m.RlModelWindow), 'RL model');
 
 /** Run configuration and its RL model window (plan-refactoring C4): useRlModel holds the state and the work and stays mounted
  *  with this panel - the state lives on while the window is closed -; RunConfiguration, RewardConditions and RlModelWindow draw it. */

@@ -64,7 +64,8 @@ if (!encoderModels) SKIPPED.encoder_models_check = 'needs its two saved MOCK mod
 const only = names(option('--only')), skip = names(option('--skip')) ?? [];
 // Check catalog: files are still discovered dynamically below; this list is documentation only.
 // Hermetic checks refuse backend writes; snapshots/downloads stay in each check's evidence folder.
-// external_agents_check: the Agent UI and routes stay absent; user-started desktop or CLI agents handle assistance.
+// external_agents_check: the removed desktop and paid CLI agent launchers stay absent beside the local Agent tab; hermetic;
+//   records 7.435, 7.441.
 // blocking_issues_check: Header's blocking-issues window; hermetic; record 7.12.
 // calibration_check: Baseline calibration and Apply; writes scratch MOCK runs; records 7.197, 7.202.
 // calibration_save_check: Calibration Apply and save; hermetic task-save fixtures; record 7.217.
@@ -75,6 +76,8 @@ const only = names(option('--only')), skip = names(option('--skip')) ?? [];
 // consistency_check: Saved-task Check now and refused starts; hermetic; record 7.61.
 // corner_check_check: Corner check tab and run state; hermetic; record 7.62.
 // crash_panel_check: Crash panel and recovery actions; hermetic; record 7.188.
+// deferred_panels_check: Optional panels load on demand; a failed download stays in its panel, with Retry and Reload
+//   the page; hermetic; records 7.457, 7.460, 7.471.
 // dom_identity_check: Page/window DOM and request identity; hermetic, saves snapshots; record 7.290.
 // edit_state_check: Editor/save state and Undo under StrictMode; in-memory source fixture; record 7.174.
 // editor_columns_check: Parameters, Probes and Specs columns; hermetic; record 7.172.
@@ -87,6 +90,8 @@ const only = names(option('--only')), skip = names(option('--skip')) ?? [];
 // graph_paint_check: Circuit-graph attention styling; in-memory headless Cytoscape; record 7.374.
 // graph_view_check: Circuit graph window; fixtures plus optional saved-model reads; record 7.33.
 // launch_recovery_check: Header recovery after a lost start/status reply; hermetic; record 7.268.
+// local_agent_check: Local Agent tab: model lifecycle, chat, suggestions and Apply; synthetic Agent operations, other
+//   writes refused; records 7.441, 7.443.
 // looks_check: Page and window layout in the Roadster look; hermetic; records 7.158, 7.360.
 // matched_devices_check: Parameters' Matched devices window; hermetic; record 7.103.
 // mode_suggestion_check: Run mode suggestions and legacy resume; hermetic; records 7.90, 7.267.
@@ -188,7 +193,8 @@ function runOne(name, url, env = {}) {
   return new Promise(resolve => {
     const dir = path.join(out, name);
     mkdirSync(dir, { recursive: true });
-    const limit = Math.max(120, 3 * (EXPECTED[name] ?? 40));
+    // The live MOCK check saves four times (pause/stop on two runs); disk contention can outlast its quiet-host timing.
+    const limit = Math.max(name === 'run_control_live_check' ? 240 : 120, 3 * (EXPECTED[name] ?? 40));
     const started = Date.now();
     const child = spawn(process.execPath, [path.join(scripts, `${name}.mjs`), dir], { windowsHide: true,
       env: { ...process.env, GATOR_WORKBENCH_URL: url, GATOR_CHECK_LIMIT_S: String(limit), ...env } });

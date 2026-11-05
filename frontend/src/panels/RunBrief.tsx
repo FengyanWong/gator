@@ -1,6 +1,6 @@
 // The run brief, "Running now" (record 7.264): the small window the header's run chip opens, with a card for the
 // header's run and one for every other live run.
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, Json } from '../api';
 import { clock, count, durationWhole as span, folderName, runTask, sig, taskNameOf, timeLine, TIME_LINE_HELP } from '../format';
 import { startedFrom } from '../lineage';
@@ -11,6 +11,7 @@ import { Icon } from './Icons';
 import { runMode } from './rlModelText';
 import { RUNNING_WINDOW } from '../contract';
 import { cardLive, isLive, type RunControl } from '../runState';
+import { useNewest } from '../newest';
 
 /** The run brief (record 7.264; plan "The run brief", added by record 7.259 - user: "pressing the green running text on
  *  banner will show you small popup window showing the running runs brief"). The header's run chip opens a small window of
@@ -72,23 +73,28 @@ function BriefCard({ dir, row, status, header, byDir, from, onShow }: { dir: str
 
 export function useRunBrief({ control, runs, onRefreshRuns, onShow }: { control: RunControl; runs: Json[]; onRefreshRuns: () => Promise<Json[]>;
   onShow: (dir: string) => void }) {
-  const { popup, root, blocked, open: openPopup } = usePopupWindow('gator-running',
-    { title: RUNNING_WINDOW, features: 'popup,width=470,height=540', rootId: 'running-root' });
   const [others, setOthers] = useState<{ row: Json; status: Json | null }[]>([]);
   const [readAt, setReadAt] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
+  const asked = useNewest();
+  const { popup, root, blocked, open: openPopup } = usePopupWindow('gator-running',
+    { title: RUNNING_WINDOW, features: 'popup,width=470,height=540', rootId: 'running-root',
+      onClose: () => { asked.drop(); setReading(false); } });
+  useEffect(() => () => asked.drop(), [asked]);
   // The other live runs: the run list read again, and each one's status - once, when the window opens, and by Refresh.
   const read = async () => {
+    const mine = asked.next();
     setReading(true);
     try {
       const list = await onRefreshRuns();
+      if (!mine()) return;
       const live = list.filter(r => isLive(r) && r.run_dir !== control.dir);
       const statuses = await Promise.all(live.map(r => api.status(r.run_dir).catch(() => null)));
-      setOthers(live.map((row, i) => ({ row, status: statuses[i] })));
-    } finally { setReading(false); setReadAt(clock()); }
+      if (mine()) setOthers(live.map((row, i) => ({ row, status: statuses[i] })));
+    } finally { if (mine()) { setReading(false); setReadAt(clock()); } }
   };
-  const open = () => { openPopup(); void read(); };
-  const byDir = new Map(runs.map(r => [r.run_dir, r]));
+  const open = () => { if (openPopup()) void read(); };
+  const byDir = useMemo(() => new Map(popup ? runs.map(r => [r.run_dir, r]) : []), [popup, runs]);
   const view = popup && root && (
     <div className="run-brief">
       {/* Refresh is the refresh icon, as the bottom tabs' and the list windows' (branch record SIF-113), its word for screen

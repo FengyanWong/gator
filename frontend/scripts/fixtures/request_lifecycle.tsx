@@ -2,6 +2,7 @@
 import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api } from '../../src/api';
+import { connectionProfilesChanged, connectionProfilesShared } from '../../src/shared';
 import { useRequest } from '../../src/store';
 import { DATA_CHOICE, DataTab, FilesTab, LogsTab, StatusTab } from '../../src/panels/RunTabs';
 
@@ -24,6 +25,25 @@ HTMLAnchorElement.prototype.click = function () { downloads.push(this.download);
     if (!request) throw new Error(`No pending ${kind} for ${run}`);
     request.done = true;
     if (error) request.reject(new Error('FIXTURE read failed')); else request.resolve(value);
+  },
+  async profileCacheRace() {
+    const original = api.connectionProfiles;
+    const saved = { active: 'synthetic-created', profiles: [{ id: 'synthetic-created' }] };
+    let reads = 0, rejectRead: (error: Error) => void = () => {};
+    api.connectionProfiles = () => { reads++; return new Promise((_resolve, reject) => { rejectRead = reject; }); };
+    try {
+      const old = connectionProfilesShared(), shared = connectionProfilesShared() === old;
+      const failed = old.catch(error => error.message);
+      connectionProfilesChanged(saved);
+      const published = connectionProfilesShared();
+      rejectRead(new Error('FIXTURE older profile read failed'));
+      const error = await failed;
+      const retained = connectionProfilesShared() === published;
+      return { shared, retained, reads, value: await published, error };
+    } finally {
+      api.connectionProfiles = original;
+      connectionProfilesChanged(saved);
+    }
   }
 };
 

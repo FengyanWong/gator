@@ -8,7 +8,7 @@ import { flushSync } from 'react-dom';
 import { pointAt } from './CircuitPicture';
 import { api, saveJson } from '../api';
 import { IMPORTED_SECTIONS, prepareImport, ROW_TABS } from './editorImport';
-import { idList, unsavedSummary } from './editorChanges';
+import { idList, indexUnsavedRows, unsavedSummary } from './editorChanges';
 import type { ConfigRow, ConfigSetter, EditorColumn, EditorRow, EditorSchema, RowDiff, SavedRowChange, ValidationIssue, ValidationReply, WorkbenchConfig } from '../contracts';
 import { convert, kindUnit, NUMBER_FORMS, quantity, readQuantity, sameQuantity } from '../units';
 import { MatchedDevices } from './MatchedDevices';
@@ -703,8 +703,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   function unsavedMarks() {
     const unsavedIn = (section: Section) => validation?.unsaved_rows?.sections?.[section] ?? null;
     const unsaved = unsavedIn(tab);
-    const isNew = (row: EditorRow) => !!unsaved?.added?.includes(String(row[keyField] ?? ''));
-    const changeOf = (row: EditorRow): SavedRowChange | null => unsaved?.changed?.[String(row[keyField] ?? '')] ?? null;
+    const { isNew, changeOf, unsavedTies } = indexUnsavedRows(rows, keyField, unsaved, leaderOf);
     // Specs show the objective inside the Limit list: a saved objective is that cell's.
     const cellOf = (field: string) => tab === 'targets' && field === 'direction_after_feasible' ? 'constraint' : field;
     // A saved value as its cell writes it: a quantity in the saved row's unit, a limit in words, a tick as on or off.
@@ -737,9 +736,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       const summary = unsavedSummary(unsavedIn(section));
       return summary ? `Not saved in the task: ${summary}. Save as stores the rows in a new task; Reload saved values brings back the saved ones.` : null;
     };
-    return { isNew, changeOf, savedIn, rowNote, unsavedTitle };
+    return { isNew, changeOf, unsavedTies, savedIn, rowNote, unsavedTitle };
   }
-  const { isNew, changeOf, savedIn, rowNote, unsavedTitle } = unsavedMarks();
+  const { isNew, changeOf, unsavedTies, savedIn, rowNote, unsavedTitle } = unsavedMarks();
   // Beside the task's name (record 7.362): whether the rows are the saved task's - only for a saved task, which validation
   // compares with its file (record 7.222); the tabs' dots say where they differ.
   const savedState = !validation?.unsaved_rows?.sections ? null
@@ -860,27 +859,25 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
             && <span className="tab-errors" data-errors={blocking.length} aria-hidden="true" />}</button>; })}
         <span className="tab-actions">
           <button className={`circuit-toggle${circuitShown ? ' active' : ''}`} aria-pressed={circuitShown} onClick={onCircuit}
-            title={circuitShown ? 'Hide circuit: The circuit column folds away and the rows take the width again.'
-              : "Show circuit: The circuit's labels, picture, notes and hierarchy beside the rows - a Parameters row pointed at lights its devices in the picture."}>
-            {circuitShown ? 'Hide circuit' : 'Show circuit'}</button>
+            title={circuitShown ? 'Hide circuit: Give the editors more room.'
+              : 'Show circuit: Labels, picture and hierarchy beside the editors.'}>
+            <Icon name="circuit" label={circuitShown ? 'Hide circuit' : 'Show circuit'} /></button>
           <span className="task-tools" ref={taskTools} /><span className="task-save-slot" ref={taskSlot} /></span></div>
       <div className="toolbar">
-        <button ref={addButton} onClick={add} title="Add: A new row at the end, with a free ID, chosen in view so its name can be typed at once.">
+        <button ref={addButton} onClick={add} title="Add: Append a row and edit its ID.">
           <Icon name="add" label="Add" /></button>
         <button disabled={!selection.length} onClick={remove}
-          title={'Delete selected: The rows whose box is ticked. Undo takes them back. The line under the formula bar names them, '
-          + 'and the rows tied to them or the Specs using them.'}><Icon name="delete" label="Delete selected" /></button>
+          title="Delete selected: Remove ticked rows. Undo restores them."><Icon name="delete" label="Delete selected" /></button>
         <button disabled={!canUndo} onClick={undo}
-          title={'Undo: The last change to the configuration, from any panel - rows, run and output settings, an applied proposal. '
-          + 'The line under the formula bar names what it took back. Ctrl+Z anywhere on the page, but in a text box.'}>
+          title="Undo: Revert the last configuration change. Ctrl+Z outside text boxes.">
           <Icon name="undo" label="Undo" /></button>
-        <button disabled={!canRedo} onClick={redo} title="Redo: The change Undo took back. Ctrl+Y or Ctrl+Shift+Z, but in a text box.">
+        <button disabled={!canRedo} onClick={redo} title="Redo: Restore the undone change. Ctrl+Y or Ctrl+Shift+Z outside text boxes.">
           <Icon name="redo" label="Redo" /></button>
         <button onClick={() => saveJson(`${config.project.task_name}.config.json`, config)}
-          title="Export JSON: The whole configuration - the three tables, the circuit, run and output settings, research labels - as one JSON file, downloaded.">
+          title="Export JSON: Download the complete configuration.">
           <Icon name="export" label="Export JSON" /></button>
         <button ref={importButton} onClick={() => file.current?.click()}
-          title="Import JSON...: Read a JSON file - a whole configuration, or rows for this tab. You see everything it changes before anything is replaced.">
+          title="Import JSON...: Preview a configuration or this table's rows before applying.">
           <Icon name="import" label="Import JSON..." /></button>
         <input ref={file} type="file" accept="application/json" hidden
           onChange={e => { const chosen = e.target.files?.[0]; e.target.value = ''; if (chosen) importJson(chosen); }} />
@@ -899,11 +896,11 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
           {findWords.length > 0
             && <span className="find-count" title={`${rowsInView.length} of ${rows.length} rows in view`}>{rowsInView.length}/{rows.length}</span>}</span>
         <span className="spacer" />
-        {hidden.length > 0 && <button className="text" onClick={() => showMore(!more)}
-          title={(more ? 'Fewer columns: hide ' : 'More columns: also show ') + hidden.map(column => column.label ?? column.name).join(', ')
-            + '. They keep their values either way.'}>{more ? 'Fewer columns' : `More columns (${hidden.length})`}</button>}
+        {hidden.length > 0 && <button className="text" aria-expanded={more} onClick={() => showMore(!more)}
+          title={(more ? 'Fewer columns: hide ' : `More columns (${hidden.length}): also show `) + hidden.map(column => column.label ?? column.name).join(', ')
+            + '. Values are kept.'}><Icon name="columns" label={more ? 'Fewer columns' : `More columns (${hidden.length})`} /></button>}
         {tab === 'parameters' && <button className="text" onClick={() => setMatched(count => count + 1)}
-          title="Matched devices...: Reads the circuit for differential pairs, current-mirror loads, matched loads and cascodes and suggests tying their sizes. Press again to refresh the results. You review a diff; nothing is applied automatically.">
+          title="Matched devices...: Review suggested size ties for pairs, mirrors and cascodes. Press again to refresh.">
           Matched devices...</button>}
       </div>
       <div className="task-status" ref={taskStatus} />
@@ -916,7 +913,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
             title="Reload saved values: The saved rows of the task come back into the editors. Asks first; Undo takes it back.">Reload saved values</button>
           <button className="primary" onClick={() => { const asked = requestSaveAs(); setSaveAsWhy(asked.taken ? null : asked.why); }}
             title="Save as: The rows here become a new task; it asks for the name.">Save as...</button>
-          <button onClick={() => setChangesOpen(false)} title="Close: The rows stay as they are.">Close</button>
+          <button onClick={() => setChangesOpen(false)} title="Close: Keep the current rows."><Icon name="close" label="Close" /></button>
         </div>
         {saveAsWhy && <p className="warn">Save as cannot start now: {saveAsWhy}.</p>}
       </div>}
@@ -941,10 +938,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
           no task or cell is chosen: the task's lines say to choose one. */}
       {tab === 'parameters' && !rows.length
         && (config.circuit?.source === 'virtuoso' || (config.circuit?.source === 'registered_task' && !!config.circuit?.task_id))
-        && <p className="hint parameters-empty">No rows yet: add one row per size the optimizer may change
-          (Add, the + above).{config.circuit.source === 'virtuoso'
-          ? ` Once the cell is read, its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window${addsSizes
-            ? ': the + after a size adds it as a row' : ''}.` : ''}</p>}
+        && <p className="hint parameters-empty">Add a row (+) for each size to optimize.{config.circuit.source === 'virtuoso'
+          ? ` Find the cell's sizes in the Virtuoso window under Hierarchy, Instances and parameters${addsSizes
+            ? '; + beside a size adds its row' : ''}.` : ''}</p>}
       {tab === 'targets' && <p className="fact spec-probes" title={'Each spec judges its equation, written with Probe IDs, numbers, + - * / ** and brackets '
         + '(e.g. m_supply_power_w / m_osc_frequency_hz). A miss is measured against the size of the limit, unless a Scale is typed (More columns). '
         + 'A Probe pressed goes into the chosen Equation cell at the cursor; with none chosen, it is copied.'}>Probes: {probeIds.length
@@ -1018,7 +1014,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
             // Not saved in the task (record 7.222): the row is tinted, a changed cell more; folded tied rows that are not saved
             // colour their leader's count.
             const change = changeOf(row), note = rowNote(row);
-            const tiedNotSaved = tied > 0 ? rows.filter(follower => leaderOf(follower) === row[keyField] && (isNew(follower) || changeOf(follower))).length : 0;
+            const tiedNotSaved = unsavedTies.get(row[keyField]) ?? 0;
             return <tr key={index} data-index={index} hidden={!inView(row, index)} {...point}
               className={[found.some((issue: ValidationIssue) => issue.level === 'error' || issue.level === 'blocker') ? 'has-error' : '', leader ? 'tied' : '',
                 isNew(row) ? 'unsaved-new' : change ? 'unsaved-changed' : ''].filter(Boolean).join(' ') || undefined}>

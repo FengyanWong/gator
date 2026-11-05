@@ -6,6 +6,7 @@ Moved from profiles.py by the refactoring (docs/plan-refactoring.md); profiles.p
 """
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import datetime
 import json
 from pathlib import Path
@@ -43,20 +44,32 @@ def record_reference(name, run_dir) -> dict:
     if (config.get('circuit') or {}).get('task_id') != f'real:{name}' or manifest.get('mock'):
         raise ProfileError(f'That run did not simulate real:{name}')
     # ---- Select the real baseline and require complete recipe metrics before writing a reference.
+    import pyarrow.compute as pc
     reader = DatasetReader(run_dir / 'data')
-    baselines = [row for row in reader.rows('evaluations', ['evaluation_id', 'phase', 'provenance', 'result_source',
-        'completed_at'])
-                 if row['phase'] == 'baseline' and row['provenance'] == 'real' and row['result_source'] == 'simulation']
-    if not baselines:
+    baseline = None
+    with closing(reader.iter_batches('evaluations', ['evaluation_id', 'phase', 'provenance', 'result_source',
+                                                    'completed_at'])) as batches:
+        for batch in batches:
+            # Keep scanning after finding the first baseline to detect unreadable later Parquet parts and schema
+            # errors. Only the selected row becomes a Python object.
+            if baseline is None:
+                selected = batch.filter(pc.and_(pc.equal(batch['phase'], 'baseline'), pc.and_(
+                    pc.equal(batch['provenance'], 'real'), pc.equal(batch['result_source'], 'simulation'))))
+                if selected.num_rows:
+                    baseline = selected.slice(0, 1).to_pylist()[0]
+    if baseline is None:
         raise ProfileError('That run holds no real baseline simulation')
-    evaluation = baselines[0]['evaluation_id']
+    evaluation = baseline['evaluation_id']
     # The simulator's own results are the per-condition rows (a spec computed by a formula has no measurement_id
     # either).
-    raw = {row['metric_name']: row for row in reader.rows('metrics', ['evaluation_id', 'measurement_id', 'metric_name',
-        'raw_value', 'unit',
-                                                                      'valid', 'aggregation_level'])
-           if row['evaluation_id'] == evaluation and row['measurement_id'] is None and row[
-               'aggregation_level'] == 'condition'}
+    raw = {}
+    with closing(reader.iter_batches('metrics', ['evaluation_id', 'measurement_id', 'metric_name',
+                                                 'raw_value', 'unit', 'valid', 'aggregation_level'])) as batches:
+        for batch in batches:
+            same = pc.is_null(batch['evaluation_id']) if evaluation is None else pc.equal(batch['evaluation_id'], evaluation)
+            selected = batch.filter(pc.and_(same, pc.and_(pc.is_null(batch['measurement_id']),
+                                                        pc.equal(batch['aggregation_level'], 'condition'))))
+            raw.update((row['metric_name'], row) for row in selected.to_pylist())
     # A task measured by Maestro names its own results (its outputs; `recipes.provided_metrics` has none for it) - found
     # on the user's first real baseline, 2026-09-24: with the recipe's empty tuple every Maestro baseline was
     # "unexpected".
@@ -72,7 +85,7 @@ def record_reference(name, run_dir) -> dict:
             f"{', '.join(problems) or 'unexpected metrics ' + ', '.join(sorted(set(raw) - set(expected)))})")
     reference = dict(origin='real', profile=name, run_dir=str(run_dir), run_id=manifest.get('run_id'),
                      evaluation_id=evaluation,
-                     completed_at=str(baselines[0]['completed_at']), recorded_utc=utcnow().isoformat(),
+                     completed_at=str(baseline['completed_at']), recorded_utc=utcnow().isoformat(),
                      metrics={metric: raw[metric]['raw_value'] for metric in expected},
                      metric_units={metric: raw[metric]['unit'] for metric in expected},
                      note='Raw backend metrics of the baseline evaluation, read from the run\'s metrics table.')

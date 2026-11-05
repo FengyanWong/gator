@@ -16,7 +16,7 @@ its top). There is no `AGENTS.md`.
    lives (button, code, route, entries, tests, checks): `docs/functionality-reference.md`; when you add, change or
    remove a function, change its row there as well. The page, code and records use the words defined in
    `docs/glossary.md`. A new entry
-   goes at the end of the open log file `docs/workbench-log/7.439-and-later.md`, plus its one-line row in the index;
+   goes at the end of the open log file `docs/workbench-log/7.460-and-later.md`, plus its one-line row in the index;
    a new commit row goes at the end of the commit table in `docs/workbench-log/record-history.md`.
 2. Preserve uncommitted user work. Never commit, push or reset without being asked. Several sessions
    share this working tree and its git index: stage explicit paths only, never `git add -A`. A bare `git commit`
@@ -62,6 +62,7 @@ OMP_NUM_THREADS=1 ~/analog-optimizer-venv/bin/python -m pytest -q -n 12 --dist l
 PYTHONPATH=src ~/analog-optimizer-venv/bin/python -m gator_workbench.cli serve
 cd frontend && npx tsc --noEmit     # type-check only (Windows npx through WSL interop)
 cd frontend && npm run build        # = tsc --noEmit && vite build (a bare `npx vite build` does NOT type-check)
+cd frontend && npm run test:unit    # the node unit tests (editor data, task runs): no browser, no backend
 "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/<name>.mjs)"   # a browser check (no `node` in WSL)
 OMP_NUM_THREADS=1 PYTHONPATH=src ~/analog-optimizer-venv/bin/python tests/perf/learner_update_profile.py --wait-load 6   # learner step timing
 ```

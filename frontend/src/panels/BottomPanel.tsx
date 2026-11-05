@@ -8,8 +8,13 @@ import type { Refusal, useLauncher } from '../launch';
 import { CornerCheckTab } from './CornerCheck';
 import { type RunChoice, RunListButton } from './RunList';
 import { DATA_CHOICE, type DataChoice, DataTab, FilesTab, LogsTab, StatusTab } from './RunTabs';
-import { TrainingTab } from './TrainingTab';
-import { AgentTab } from './AgentTab';
+import { deferredPanel, VisitedPanel } from './deferredPanel';
+// Keep these small styles in the main sheet: Vite caches failed lazy CSS preloads, so a panel retry cannot recover them.
+import './AgentTab.css';
+import 'uplot/dist/uPlot.min.css';
+
+const TrainingTab = deferredPanel(() => import('./TrainingTab').then(m => m.TrainingTab), 'Training');
+const AgentTab = deferredPanel(() => import('./AgentTab').then(m => m.AgentTab), 'Agent');
 
 // The bottom panel (plan-refactoring C5, out of App.tsx): its height and fold, kept in this browser, the splitter above it,
 // its tab line and the tab it shows. The page holds the tab (useBottomTab) and the run shown; useBottomPanel holds the rest.
@@ -155,8 +160,12 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
             tab, or the panel folded to its tab line - it reads and draws nothing (record 7.193). The status's error: a run the
             list calls live waits for its status before its first read, and one whose status cannot be read is read all the
             same (branch record SIF-126). */}
-        <TrainingTab hidden={tab !== 'training' || folded} runDir={runDir} status={status} statusError={statusError} runs={runs} />
-        <AgentTab hidden={tab !== 'agent' || folded} config={config} setConfig={setConfig} />
+        <VisitedPanel active={tab === 'training' && !folded}>
+          <TrainingTab hidden={tab !== 'training' || folded} runDir={runDir} status={status} statusError={statusError} runs={runs} />
+        </VisitedPanel>
+        <VisitedPanel active={tab === 'agent' && !folded}>
+          <AgentTab hidden={tab !== 'agent' || folded} config={config} setConfig={setConfig} />
+        </VisitedPanel>
         {tab === 'corners' && cornersUsable && <CornerCheckTab runDir={runDir} />}
       </div>
     </footer>

@@ -1,6 +1,6 @@
 // The task name button and the Tasks window it opens (record 7.227; on the editors' tab line since record 7.362): every
 // registered task, with folders and Details, and the task the page follows.
-import { Dispatch, Fragment, MouseEvent, ReactNode, SetStateAction, useEffect, useRef, useState } from 'react';
+import { Dispatch, Fragment, MouseEvent, ReactNode, SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { TASKS_WINDOW } from '../contract';
@@ -11,6 +11,7 @@ import { FolderMoveBar, Folders, FolderView, useFolders } from './Folders';
 import { TableHead, TableView, useTableView } from './TableView';
 import { Icon } from './Icons';
 import { OPEN_TASKS, openRunsAt, TasksAt } from '../openAt';
+import { summarizeTaskRuns, type TaskRuns } from './taskRuns';
 
 /** Which registered task the page follows (user request 2026-10-06, record 7.227: "make the loaded task a button similar to
  *  the runs... button style. It opens a new window showing all the tasks"): the task name is the button that opens its
@@ -50,11 +51,6 @@ export const taskMark = (t: Json, ngspiceOffered: boolean, withReason = false) =
   : t.available ? '' : withReason && t.blocker ? `[blocked: ${t.blocker}]` : '[blocked]';
 const cellOf = (t: Json) => t.library && t.cell ? `${t.library}/${t.cell}`
   : t.kind === 'ngspice' ? 'ngspice netlist' : t.kind === 'mock' ? 'built-in netlist' : '-';
-/** The runs of one task: how many, and the newest by its start (a Baseline simulation is one of them). */
-function runsOf(runs: Json[], key: string) {
-  const mine = runs.filter(r => r.task_key === key).sort((a, b) => String(b.created_utc ?? '').localeCompare(String(a.created_utc ?? '')));
-  return { count: mine.length, newest: mine[0] ?? null };
-}
 /** A time in the list to the minute (branch record SIF-24): its columns are narrower and wrap less. Details show Created, Saved
  *  and Baseline recorded to the second. */
 const minute = (utc?: string | null) => stamp(utc)?.slice(0, 16) ?? null;
@@ -74,7 +70,7 @@ const newestText = (r: Json | null) => !r ? 'none'
   : `${minute(r.created_utc) ?? '?'} · ${r.state ?? 'not started'} · ${plural(r.evaluations ?? 0, 'evaluation')}`
   + (r.first_feasible_eval_count != null ? ` · first feasible at evaluation ${r.first_feasible_eval_count}` : r.evaluations ? ' · none feasible' : '');
 
-type Column = { key: string; title: string; help: string; numeric?: boolean; value: (t: Json, runs: Json[]) => string | number | null };
+type Column = { key: string; title: string; help: string; numeric?: boolean; value: (t: Json, runs: TaskRuns) => string | number | null };
 const COLUMNS: Column[] = [
   { key: 'task', title: 'Task', help: 'The name the task is shown under. A renamed task says its internal name below it: the name its files, its cell and its runs keep (Details holds the Name box). A mark says what keeps it from running now (the whole reason on hover); synthetic tasks carry a MOCK badge.',
     value: t => shownName(t) },
@@ -90,16 +86,15 @@ const COLUMNS: Column[] = [
   { key: 'rows', numeric: true, title: 'Sizes / results', help: 'How many sizes the task varies and how many results its testbench measures.',
     value: t => t.variables != null ? `${t.variables} / ${t.results ?? 0}` : null },
   { key: 'newest', title: 'Newest run', help: 'The task\'s newest run under the output folder: started, state, evaluations, first feasible. The bottom tabs show it when the task is chosen (record 7.212).',
-    value: (t, runs) => runsOf(runs, t.task_key).newest?.created_utc ?? null },
+    value: (_t, runs) => runs.newest?.created_utc ?? null },
   { key: 'runs', numeric: true, title: 'Runs', help: 'How many runs of the task the output folder holds, Baseline simulations included.',
-    value: (t, runs) => runsOf(runs, t.task_key).count },
+    value: (_t, runs) => runs.count },
 ];
 
 /** Everything else about one task, and its rows (read from the starter route when the details open). `onFollow`: what a
  *  double click on its row does; offered while the page follows another task (branch record SIF-100). */
-function TaskDetails({ task, runs, rows, error, followed, deleting, onFollow, onRenamed }: { task: Json; runs: Json[]; rows: Json; error?: string;
+function TaskDetails({ task, of, rows, error, followed, deleting, onFollow, onRenamed }: { task: Json; of: TaskRuns; rows: Json; error?: string;
   followed: boolean; deleting: boolean; onFollow: () => void; onRenamed: (name: string) => void }) {
-  const of = runsOf(runs, task.task_key);
   // Rename (record 7.302; user: "add rename functionality to tasks"): the name the task is SHOWN under. Its key, its
   // files, its cell and every run and model that names it stay as they are; typing its own name takes a rename back.
   const [name, setName] = useState(shownName(task));
@@ -212,7 +207,9 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   const [reading, setReading] = useState(false);
   const [readAt, setReadAt] = useState<string | null>(null);
   const [tasksError, setTasksError] = useState<string | null>(null);
-  const known = runs.some(run => 'task_key' in run);              // an older workbench server lists runs without their task
+  // One pass per run-list read while open; filtering, sorting and Details share the same counts and newest rows.
+  const runInfo = useMemo(() => summarizeTaskRuns(popup ? runs : []), [runs, popup]);
+  const known = runInfo.known;                                  // an older workbench server lists runs without their task
   const table = useTableView('task', false);
   const { filter, setFilter, selected, setSelected } = table;
   const [open, setOpen] = useState<string | null>(null);          // the task whose details are shown
@@ -245,7 +242,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
     task.circuit_class, task.pdk_id, cellOf(task), task.testbench, task.description, task.title, stamp(task.saved_utc)].join(' ').toLowerCase();
   const column = COLUMNS.find(candidate => candidate.key === table.sort.key) ?? COLUMNS[0];
   // Only while the window is open.
-  const shown = !popup ? [] : table.arrange(tasks, task => folders.holds(task.task_key), text, task => column.value(task, runs));
+  const shown = !popup ? [] : table.arrange(tasks, task => folders.holds(task.task_key), text, task => column.value(task, runInfo.of(task.task_key)));
 
   const view = popup && root && (
     <div className="run-window task-window">
@@ -256,10 +253,9 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
       {current && onDelete && currentTaskLine({ current, nameOf, deleteDisabled, onDelete, popup, deleteTitle, deleting })}
       {deleteNotice}
       {newTask && <div className="row task-window-new"><span className="hint">New task:</span>{newTask(popup)}</div>}
-      <p className="hint"><b>Double click</b> a task to make the workbench follow it (or press Enter on its row, or <b>Follow this task</b> in its
-        Details): its Parameters, Probes and Specs come into the editors (edits you made are asked about first) and the bottom tabs show its newest
-        run. Then the window closes; it stays open when you answer Cancel to the edits question or the task cannot be read. The task the page follows
-        is marked. <b>Details</b> shows the rest, the task's rows included.</p>
+      <p className="hint"><b>Double click</b> a task, press Enter on its row, or choose <b>Follow this task</b> in Details.
+        This loads its editor rows and newest run, asking before discarding edits. The window closes after loading.{' '}
+        <b>Details</b> shows the task and its saved rows.</p>
       <details className="more"><summary>What the columns mean</summary>
         <ul className="steps-list">{COLUMNS.map(entry => <li key={entry.key}><b>{entry.title}</b>: {entry.help}</li>)}
           <li>All times are the local time of this computer. Press a column title to sort by it.</li></ul></details>
@@ -273,7 +269,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
       <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void table.move(folders, id)} />
       {tasks.length > 0 && <div className="scroll"><table className="grid run-table task-table">
         <TableHead view={table} columns={COLUMNS} shown={shown} id={task => task.task_key} what="tasks" disabled={folders.busy || !folders.ready} />
-        <tbody>{shown.map(task => taskRow({ task, current, ngspiceOffered, runs, loading, known, folders, selected, table, popup, open, rows,
+        <tbody>{shown.map(task => taskRow({ task, current, ngspiceOffered, of: runInfo.of(task.task_key), loading, known: known || runs.length === 0, folders, table, popup, open, rows,
           deleting, chooseRow, follow, toggle, renamedTask }))}</tbody></table></div>}
       {/* Only while there are tasks, as in the Runs window (branch record SIF-68): with none, All tasks told the user to
           select tasks in All tasks, under the line that says why the list is empty. */}
@@ -389,19 +385,19 @@ function currentTaskLine({ current, nameOf, deleteDisabled, onDelete, popup, del
 
 /** A task's row - its tick box, name and mark, class, cell, revision, times, sizes, newest run, runs and Details - and under
  *  it, while they are open, its Details (TaskDetails). A double click or Enter on the row makes the page follow the task. */
-function taskRow({ task, current, ngspiceOffered, runs, loading, known, folders, selected, table, popup, open, rows, deleting, chooseRow, follow, toggle,
+function taskRow({ task, current, ngspiceOffered, of, loading, known, folders, table, popup, open, rows, deleting, chooseRow, follow, toggle,
   renamedTask }: {
-  task: Json; current: string | null; ngspiceOffered: boolean; runs: Json[]; loading: string | null; known: boolean; folders: FolderView;
-  selected: string[]; table: TableView; popup: Window; open: string | null; rows: RowsRead | null; deleting?: boolean;
+  task: Json; current: string | null; ngspiceOffered: boolean; of: TaskRuns; loading: string | null; known: boolean; folders: FolderView;
+  table: TableView; popup: Window; open: string | null; rows: RowsRead | null; deleting?: boolean;
   chooseRow: (e: MouseEvent<HTMLTableRowElement>, key: string) => void; follow: (key: string) => void; toggle: (key: string) => void;
   renamedTask: (key: string, name: string) => Promise<void | undefined> }) {
-  const active = task.task_key === current, mark = taskMark(task, ngspiceOffered, true), of = runsOf(runs, task.task_key);
+  const active = task.task_key === current, mark = taskMark(task, ngspiceOffered, true);
   return (<Fragment key={task.task_key}>
     <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} data-task-key={task.task_key}
       title={renamed(task) ? `${shownName(task)} (internal name ${taskName(task.task_key)})` : taskName(task.task_key)}
       onDoubleClick={e => chooseRow(e, task.task_key)}
       tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) follow(task.task_key); }}>
-      <td className="task-select"><input type="checkbox" aria-label={`Select ${shownName(task)}`} checked={selected.includes(task.task_key)}
+      <td className="task-select"><input type="checkbox" aria-label={`Select ${shownName(task)}`} checked={table.selectedIds.has(task.task_key)}
         disabled={folders.busy || !folders.ready} onChange={e => table.select(task.task_key, e.target.checked)} /></td>
       <td><code>{shownName(task)}</code>{loading === task.task_key && <span className="hint"> loading...</span>}
         {renamed(task) && <div className="hint task-internal-name">internal name {taskName(task.task_key)}</div>}
@@ -422,15 +418,15 @@ function taskRow({ task, current, ngspiceOffered, runs, loading, known, folders,
       <td title={of.newest?.run_dir}>{of.newest ? <button className="item-link"
           onClick={() => openRunsAt({ run_dir: of.newest.run_dir, task_key: task.task_key, from: popup })}
           title={`${of.newest.run_dir}\nOpen the Runs window at this run, with this task's runs only.`}>{newestText(of.newest)}</button>
-        : known || runs.length === 0 ? <span className="hint">none</span> : '-'}</td>
-      <td className="numeric">{known || runs.length === 0 ? (of.count ? <button className="item-link"
+        : known ? <span className="hint">none</span> : '-'}</td>
+      <td className="numeric">{known ? (of.count ? <button className="item-link"
           onClick={() => openRunsAt({ task_key: task.task_key, from: popup })}
           title="Open the Runs window with this task's runs only.">{of.count}</button> : of.count) : '-'}</td>
       <td><button className="notes-link" aria-expanded={open === task.task_key} onClick={() => toggle(task.task_key)}>
         {open === task.task_key ? 'Hide details' : 'Details'}</button></td>
     </tr>
     {open === task.task_key && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
-      <TaskDetails task={task} runs={runs} rows={rows?.key === task.task_key ? rows?.value : null}
+      <TaskDetails task={task} of={of} rows={rows?.key === task.task_key ? rows?.value : null}
         error={rows?.key === task.task_key ? rows?.error : undefined} followed={active} deleting={!!deleting}
         onFollow={() => follow(task.task_key)} onRenamed={name => void renamedTask(task.task_key, name)} /></td></tr>}
   </Fragment>);

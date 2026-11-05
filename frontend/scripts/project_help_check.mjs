@@ -247,7 +247,7 @@ await runChecks(browser, async () => {
   // A read brings no Parameters rows: the empty table says how to fill it, and where the cell's sizes are - each with its +
   // (branch record SIF-104).
   check('draft: the empty Parameters table says to add rows and where the cell\'s present sizes are, with their + (branch records SIF-88, SIF-104)',
-    await card.shown('No rows yet: add one row per size the optimizer may change (Add, the + above). Once the cell is read, its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window: the + after a size adds it as a row.'),
+    await card.shown("Add a row (+) for each size to optimize. Find the cell's sizes in the Virtuoso window under Hierarchy, Instances and parameters; + beside a size adds its row."),
     await evaluate(`${PANEL}.querySelector('.parameters-empty')?.textContent ?? 'none'`));
   check('draft: its button stays in view', await win.buttonShown('Read the cell again') && !(await win.buttonShown('Ask the agent to set up')));
   check('draft: the cell is named as worked in directly, in view', await win.shown(`Working in ${LIBRARY}/tb_ring_a directly: you declared it a copy you made`));
@@ -329,11 +329,11 @@ await runChecks(browser, async () => {
     buttons: t.querySelectorAll('button').length } : null; })()`);
   check('a cell read before that has a task already: its sizes in the window have no "Add to Parameters" (branch record SIF-104)',
     tasked?.sizes > 0 && tasked.buttons === 0 && await win.shown('real:fixture_ring_c'), JSON.stringify(tasked));
-  check('...and the empty Parameters line names no + after a size (review of SIF-104)', (await evaluate(EMPTY)) === 'No rows yet: add one row per size the optimizer may '
-    + 'change (Add, the + above). Once the cell is read, its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window.', await evaluate(EMPTY));
+  check('...and the empty Parameters line names no + after a size (review of SIF-104)', (await evaluate(EMPTY)) === "Add a row (+) for each size to optimize. "
+    + "Find the cell's sizes in the Virtuoso window under Hierarchy, Instances and parameters.", await evaluate(EMPTY));
   await win.choose('Cell', 'ring_a'); await quiet(); await far.until(`${WIN}.textContent.includes('Not optimizable yet')`);
   check('...back on the cell without a task, the + is there and the line names it again', (await plus())?.on === true
-    && (await evaluate(EMPTY)).endsWith('in the Virtuoso window: the + after a size adds it as a row.'), await evaluate(EMPTY));
+    && (await evaluate(EMPTY)).endsWith('; + beside a size adds its row.'), await evaluate(EMPTY));
 
   // ---- a saved task: its lines under the editors' toolbar, Check now on the tab line, its circuit in the column (record 7.362) ----------
   await evaluate(`${TASK_BUTTON('Save as')}.click()`, true); await quiet(); await until(`!!${PANEL}.querySelector('.tabs .task-tools button.check-now')`);

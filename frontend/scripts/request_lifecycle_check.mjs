@@ -98,5 +98,10 @@ await runChecks(browser, async () => {
   await wait('events', 'A');
   await resolve('events', 'A', { kind: 'events', entries: [{ event: 'FIXTURE recovered log' }] });
   check('log retry recovers without changing the run', await page.until(`${panel}.includes('FIXTURE recovered log') && !${panel}.includes('FIXTURE read failed')`));
+  const profiles = await page.evaluate('fixture.profileCacheRace()');
+  check('concurrent connection-list readers share one read', profiles.shared);
+  check('an older failed read cannot discard a newly saved connection list', profiles.retained && profiles.reads === 1
+    && profiles.value.active === 'synthetic-created', JSON.stringify(profiles));
+  check('the superseded reader still receives its own error', profiles.error === 'FIXTURE older profile read failed');
   check('no browser exceptions', page.consoleErrors.length === 0, JSON.stringify(page.consoleErrors));
 });

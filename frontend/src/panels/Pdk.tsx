@@ -4,7 +4,7 @@ import { useAsyncAction } from '../store';
 import { type KeyboardEvent, memo, useEffect, useMemo, useState } from 'react';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
-import { signal } from '../signal';
+import { pdkChanges } from '../shared';
 import { bytes, count, dateTimeOrText as loadedAt, plural } from '../format';
 import { PDK_WINDOW } from '../contract';
 import { api, type ApiError, gateText, Json, problemText } from '../api';
@@ -33,8 +33,6 @@ const USABLE_PDK_ID = (id?: string | null) => !!id && /^[A-Za-z_][A-Za-z0-9_.\-]
 
 // "The loaded PDKs changed" (a cell read in the Virtuoso window brought one, a Load in the PDK window): every Components
 // list on the page reads the local list again - one GET each, no timer.
-const watchers = signal(null);
-export function pdksChanged() { watchers.notify(); }
 // `e`: the read's failure, an Error: an ApiError when the backend refused, with its `status`; another when no answer came.
 const listProblem = (e: Error & Partial<ApiError>) => e.status === 404 ? 'This workbench server is older than the page: restart it to load PDKs.'
   : `The loaded PDKs cannot be listed: ${e.message}`;
@@ -44,11 +42,17 @@ const listProblem = (e: Error & Partial<ApiError>) => e.status === 404 ? 'This w
 function usePdkList(watch: unknown) {
   const [list, setList] = useState<Json>(null);
   const [error, setError] = useState<string | null>(null);
-  const refresh = () => api.pdks().then(l => { setList(l); setError(null); }).catch(e => setError(listProblem(e)));
+  const asked = useNewest();
+  const refresh = () => {
+    const mine = asked.next();
+    return api.pdks().then(l => { if (mine()) { setList(l); setError(null); } })
+      .catch(e => { if (mine()) setError(listProblem(e)); });
+  };
   useEffect(() => {
     if (!watch) return undefined;
     refresh();
-    return watchers.subscribe(refresh);
+    const unsubscribe = pdkChanges.subscribe(refresh);
+    return () => { unsubscribe(); asked.drop(); };
   }, [watch]);
   return { list, error };
 }
@@ -72,9 +76,9 @@ export function ComponentList({ value, onChoose }: { value: string; onChoose: (v
           </select></label>
       </div>
       <p className="hint component-what">{value === 'families'
-        ? <>Knows the device families of any PDK: nMOS, pMOS, npn, pnp, diode, varactor, resistor, capacitor, inductor and sources. Each part of the task's PDK takes its family by rule (its bipolars, diodes and varactors once the PDK is loaded); a model trained with this list loads with any PDK. A new model uses this list. A PDK's own list appears here once the PDK was read: reading a cell in the Virtuoso window reads its PDK too.</>
+        ? <>Default for new models: device families across PDKs (nMOS, pMOS, npn, pnp, diode, varactor, resistor, capacitor, inductor and sources). Load the task's PDK to classify its bipolars, diodes and varactors. Models using this list can load with any PDK. Reading a cell also reads its PDK and adds that PDK's component list here.</>
         : value === 'standard'
-        ? <>Knows MOS, R, C, L and sources; other parts are "unknown". Kept to continue the models trained with it: a new model uses the device families. A PDK's own list appears here once the PDK was read: reading a cell in the Virtuoso window reads its PDK too.</>
+        ? <>For existing models: MOS, R, C, L and sources; other parts are "unknown". New models use device families. Reading a cell loads its PDK and adds that component list here.</>
         : chosen ? <>Knows all {chosen.summary.devices} components of {chosen.pdk_id}: {byFamily(chosen.summary)}. Other parts keep their standard kinds. A model trained with this list loads only with it.</>
         : null}</p>
       {missing && <p className="warn">PDK {value.slice(4)} is not loaded here. Read it in the Virtuoso window (reading a cell reads its PDK; "PDK window..." reads one by name), or choose another list.</p>}
@@ -121,7 +125,7 @@ function PdkWindow({ list, listError, profileId, circuitPdk }: { list: Json; lis
   const load = () => run('load', async () => {
       const loaded = await api.loadPdk(profileId!, library.trim() || null, modelFile.trim() || null);
       asked.drop(); setShown(loaded); setShowing(loaded.pdk_id);
-      pdksChanged();              // every open list reads again - this window's too - and the RL model window's Components list shows it at once
+      pdkChanges.notify();        // every open list reads again - this window's too - and the RL model window's Components list shows it at once
   });
   const libraryProblem = library.trim() && !/^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$/.test(library.trim()) ? 'A plain Cadence library name.' : null;
   const fileProblem = modelFile.trim() && !/^\/[A-Za-z0-9_./+\-]+$/.test(modelFile.trim()) ? 'An absolute path on the simulator host (letters, digits, / . _ - +).' : null;
@@ -134,22 +138,20 @@ function PdkWindow({ list, listError, profileId, circuitPdk }: { list: Json; lis
   return (
     <div className="pdk-window">
       <h2>Load PDK</h2>
-      <p className="hint">Reads one technology library through the connection: Virtuoso's own description of every cell (pins, the parameters
-        written to the netlist, their units) and the PDK's Spectre model files (what each device is). Read-only - no cellview is changed and nothing
-        is simulated. The PDK files are not kept: only what the network needs, and the files' SHA-256. Reading a cell into the workbench reads
-        its PDK by itself (since 2026-09-27); this window reads one again, or another one by name. Each read also brings the ideal parts
-        of analogLib - sources, ideal R, C and L, probes, controlled sources - which a circuit holds besides its PDK's components.</p>
+      <p className="hint">Read a technology library's pins, parameters and device kinds through the connection. Read-only: no cellview changes
+        or simulation. Reading a cell also reads its PDK. Each read also brings the ideal parts of analogLib.</p>
       <details><summary>What is read, and how it is decided</summary>
         <p className="hint">A cell's Spectre model, pin order and netlisted parameters come from its CDF. A cell that has none of its own (a
           resistor built from a primitive) is looked into: its schematic is opened read-only and closed again. Which kind of device a model is
           comes from the Spectre primitive it uses (bsim4, bjt, diode, resistor, capacitor, inductor), its polarity from the model's type, and each
           pin's role from the primitive terminal the pin reaches. A parameter's scale comes from its declared unit, else from the PDK's default
-          value. Nothing is guessed from a name; what cannot be established is listed as "unknown".</p></details>
+          value. Nothing is guessed from a name; what cannot be established is listed as "unknown".</p>
+        <p className="hint">The saved PDK record holds metadata and file hashes. Model files are cached locally per host to avoid downloading unchanged copies.</p></details>
       <div className="row pdk-form">
         <label>Technology library<input value={library} placeholder="empty = the connection's design library's" onChange={e => setLibrary(e.target.value)} onKeyDown={loadOnEnter} /></label>
         <label>Model file on the simulator host<input value={modelFile} placeholder="empty = the connection's model file" onChange={e => setModelFile(e.target.value)} onKeyDown={loadOnEnter} /></label>
         <button className="pdk-load" disabled={!canLoad} onClick={load}
-          title="Read-only and zero-cost: one query of the library's description, and the model files downloaded, scanned and deleted.">{busy ? 'Reading...' : 'Load'}</button>
+          title="Read-only: query the library and scan its model files, reusing unchanged local copies.">{busy ? 'Reading...' : 'Load'}</button>
       </div>
       <p className="hint">Through connection <b>{profileId ?? '(none chosen)'}</b>.{busy ? ' Reading the description and the model files - usually well under a minute.' : ''}</p>
       {!profileId && <p className="warn">Choose a connection first: the "Connection" button in the header.</p>}

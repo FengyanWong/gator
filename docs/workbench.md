@@ -208,6 +208,9 @@ started with." - branch record SIF-72). Run configuration's model line and this 
     are read when the window opens and by **Refresh**, with the time they were read. Refresh is the refresh icon (an
     arrow around) beside the heading, as in the bottom tabs and the list windows - its word for screen readers and at the
     start of its tooltip (branch record SIF-113).
+  - Only the newest brief read updates its cards, loading indicator and read time (7.467); closing drops pending
+    replies. A superseded list read does not start more status requests. The run lookup is memoized while open and
+    remains empty while closed, avoiding rebuilding it on every header status update.
 * **One launcher** (record 7.261, `frontend/src/launch.ts`; plan [frontend run workflow](plan-frontend-run-workflow.md),
   build step 1). Start, Calibration, Resume and Continue... go one way:
   - **Each says why it cannot go**, in its tooltip, before any press: the header's run is live or still being looked
@@ -283,6 +286,13 @@ is never replaced), or it was started with "Model checkpoints" switched off. Bro
 `frontend/scripts/save_now_check.mjs` (fixtures only, safe next to a live run).
 
 ## The page's look and layout (record 7.158; one look since record 7.360)
+
+Compact controls (7.458): Show/Hide circuit and More/Fewer columns use labelled SVG icons, with their pressed or
+expanded state exposed to assistive tools. Copy path, Browse allowed roots, Up one folder and Close use the same
+icon vocabulary in Output settings; Agent uses Send and New conversation icons. Each retains a hidden accessible
+label and a tooltip. Matched devices, applying changes and selecting a folder keep visible action words.
+Toolbar tooltips, empty-table guidance and Agent instructions are shorter. Output settings show **Replay snapshots**
+and **Complete transition archive** with explanations in their tooltips; disabling replay still shows its warning.
 
 On 2026-10-03 the user chose two looks for the page and five layout changes from a set of pictured ideas (answers "1 A+B,
 2 yes, 3 yes, 4 yes, 5 yes, 6 Windows"): *Whiteprint*, ink on drawing paper, and *Silicon Night*, dark like Virtuoso's
@@ -625,6 +635,10 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
 | Newest run | The task's newest run under the output folder: started, state, evaluations, first feasible - the run the bottom tabs show when the task is chosen (record 7.212). A link (record 7.264): it opens the Runs window at that run, with this task's runs only. |
 | Runs | How many runs the task has, Baseline simulations included. A link (record 7.264): it opens the Runs window with this task's runs only ("Only the runs of ..."; **Show every run** takes that back). Neither link chooses the task. |
 
+The run counts and newest runs are summarized in one pass when the list changes while the window is open (7.462).
+Sorting, rows and Details share that summary. Equal timestamps retain the first run in the original list;
+empty lists and older servers without task keys keep their existing display.
+
 * **A double click on a row** makes the page follow that task - so do **Enter** on the row and **Follow this task** at
   the start of the Details of a task the page does not follow (branch record SIF-100: a keyboard could not follow a task,
   and the Runs window's Details have Load run): exactly what choosing it in the old list did - its
@@ -656,8 +670,9 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
   The shared Tasks, Runs and saved-model table code derives each row's search text and sort value at most once per
   arrangement (7.373), including the Tasks columns that count or find the newest run. Values are read again on the
   next arrangement; filtering, stable ties and missing values last keep the same behavior.
-  The shared Tasks/Runs/Models header builds selected-ID membership once per render (7.379). Its all/partial
-  checkbox state and selection/sort actions retain their behavior; row-body selection checks are unchanged.
+  Tasks/Runs/Models share one selected-ID index between the header and row checkboxes (7.463; header-only since
+  7.379), rebuilt when selection changes. The ordered selected array still drives counts and folder moves;
+  all/partial checkbox state, duplicate/offscreen selection and sorting retain their behavior.
 * **Nothing in the window updates by itself.** The task list is read when the button is pressed - also while the window
   is open: the press brings it to the front and reads the list again (branch record SIF-100) - and by **Refresh list**
   (which reads the run list again too; otherwise the run columns show the page's own run list - read when the page
@@ -933,6 +948,8 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   task** - or a save from elsewhere that the page followed to its end - the rows are compared again even when they did not
   change, so the marks go (or come, when the other save left the rows here behind). A cell read from Virtuoso without a
   task, an ngspice task and a test task have no saved rows to compare with: nothing is marked.
+  Added IDs and unsaved tied-follower counts are indexed once per editor draw (7.463). Each leader reads its count
+  directly instead of scanning all rows; duplicate follower rows still count separately and mark wording is unchanged.
 - **The ID in view** (record 7.182, design advice). While a table scrolls sideways the tick box and the row's ID stay at
   the left and the other columns pass under them, a line marking the ID's edge while they do. The ID sits right beside the
   tick-box column, whose width the page measures, also when a narrower window changes it: a tie toggle widens it on
@@ -1150,6 +1167,10 @@ the results it measures (with a unit guessed from the result's name or its expre
 and, in plain words, what would stop a run. **Delete task** (in the Tasks window, beside the current task name,
 for the task the page follows) takes
 it out of the list; its folder is kept aside on the backend machine. Nothing in the window runs a simulation.
+
+Candidate-deck identity checks use the shared SHA-256 reader in 1 MiB chunks (7.469), avoiding whole-file byte
+allocations when recording and checking the export. The written deck is still parsed again to verify its values,
+and changed bytes are still refused before that read-back.
 
 **Which way to a new task the Tasks window offers follows the connection in use** (user request 2026-09-23): with a
 Virtuoso connection chosen (the "Connection" button) **From a Virtuoso cell...** only, with an ngspice connection
@@ -2011,6 +2032,12 @@ For spec charts, the reader keeps aggregate metric rows whose `hard` flag is rec
 before copying their fields (record 7.368). Condition rows and probes with `hard=null` remain outside these charts;
 recorded values, gaps, ordering, spec definitions and page cursors are unchanged.
 
+Small spec pages join only the evaluations they name (7.462). The browser searches held rows from the end,
+stopping when all requested sequences are found; a dense page keeps the full linear index. Late and unordered
+sequences, gaps and last-duplicate selection remain supported, with the same chart invalidation. No index is
+retained across pages or thinning. Two spec values for the newest of 50,000 held evaluations need one sequence
+read in the deterministic regression, rather than rebuilding a 50,000-entry map.
+
 When no objective is configured, the Arrow formatter creates the same null objective column without decoding
 unused best-design metric maps or a second feasibility list (7.378). The feasibility column remains required;
 configured objectives keep the existing lookup and feasibility rules.
@@ -2332,6 +2359,12 @@ designs against the current hard specs: those of earlier runs of the same task w
 root (the configured one, else the remembered one), their Corner check results, and for `real:gpdk045_ota7` the
 reference and designs of reward v2's qualification (folders named in the code, never a scan of `artifacts/`).
 
+Recorded reachability reads use bounded batches (7.464). Evaluation statuses are indexed incrementally;
+metrics request consumed fields plus all schema-required fields, filter condition rows in Arrow, then convert
+only their six consumed fields to Python. Published order, last duplicate wins, missing statuses, nullable
+historical values, required-column errors and Corner check additions remain unchanged. Only temporary read
+work is reduced: the complete evidence returned to the assessor is retained, with no new simulation or cache.
+
 **Failure limits.** Run configuration's **Limits** fold (record 7.179; until then "Failure limits", which held only these two rules) has a field **Stop after N consecutive failed evaluations**
 (`run.max_consecutive_failures`, default 5). A design the simulator reports as invalid or not converging is still
 scored (reward -1) and kept in replay, and since reward v2.1 the episode goes on, so the network learns where the
@@ -2414,6 +2447,10 @@ Virtuoso updates that invalidate a reference also start a new baseline; specs-on
 New ngspice tasks run their saved deck too. Before optimization specs exist, the baseline checks measurement presence
 with `probe - probe >= 0`, using an explicit Scale of 1; these run-only checks never become task specs or performance
 claims. Current-source rows unsupported by SAC stay fixed in the saved deck, outside the baseline's action groups.
+
+Recording a Virtuoso reference streams the existing projected evaluation and metric fields in bounded batches
+(7.465). Only the first real simulation baseline and its raw condition metrics become Python objects. Later parts
+are still checked for errors; duplicate metrics retain the last value, and an existing reference is never replaced.
 
 **Calibration** in the header simulates **64 random designs only**, uniform draws over the Parameters ranges, and
 works out two settings from their measurements. There is no starting-design simulation, no per-lane reset simulation,
@@ -3341,6 +3378,9 @@ network does ("Use this save point"), and the model's facts gain a "Components" 
 library>`. Backend: `bridge_read.pdk_with_import` (states `read` / `not_read` / `skipped`, in the import's answer as
 `pdk`); the same reader op as the window's Load, so a PDK read again unchanged makes no new version.
 
+Each open PDK list accepts only its newest read (7.466). A slower earlier reply or failure cannot overwrite a list
+refreshed after Load. Closing a window invalidates its pending list read; reopening reads the current list again.
+
 **What is read - with the cell, or on the window's "Load"; read-only, no simulation** (`POST /api/virtuoso/import` and
 `POST /api/pdks/load`, connection gate `read_cellview`, reader op `pdk`; about 3 s for GPDK045):
 1. Virtuoso's own description of every cell of the technology library, in ONE query: the Spectre model a cell netlists
@@ -4248,6 +4288,16 @@ resume requires the same pool. Absent rehearsal preserves old configuration and 
 
 ## Local Agent (7.441)
 
+Since 7.472 the tab reads at the page's 14 px with a measured line: the two columns are titled Models and Conversation; each model shows its state as a pill, its download size, needs, runtime and source as a small table, and its controls with their words beside their icons (the tooltips stay); a compatibility result is a list; the notes say in plain words what the Agent does and does not do, and before a model is deployed the conversation column lists the three steps.
+
+Since 7.458, the composer uses Send and New conversation icons and **Apply changes** names the proposal action.
+Live model output enters the DOM only while its details are expanded. Once a job finishes, the temporary stream
+is released; the answer remains in the conversation. New conversation also releases old proposal snapshots,
+application flags and the previous job result. Answers retain their existing uncapped generation behavior.
+
+Runtime failures read a bounded stderr tail for the existing 1,500-character error detail (7.470), preserving
+UTF-8 replacement decoding and universal newlines without loading the complete error file.
+
 The bottom **Agent** tab offers local NVIDIA models for parameter setup and optimization-setting advice.
 `codex/latest` starts with no LLM installed. `74B-latest` uses the same implementation with a profile that
 verifies and registers the already-present Nemotron 3.5 Bolt 74B-A9B 24GB weights on its first Agent visit.
@@ -4390,6 +4440,19 @@ ended run's log is read once more after its worker ended. Overlapping tests of t
 
 The [glossary](glossary.md) maps the page's words to code and record names.
 
+Optional frontend panels load on demand (7.457). Training and Agent download and mount on their first visible
+visit, then stay mounted across tab switches to preserve charts, drafts and active jobs. The RL model and Virtuoso
+windows download when opened; their launchers still open popups directly from the click. `modelView.ts` keeps the
+model labels and persistent table state outside its rendering module. PDK change notifications live in `shared.ts`,
+so the page can notify an open component list without importing PDK rendering (7.461).
+`deferredPanel.tsx` supplies a loading message and a panel-local Retry after a failed import; other panels remain
+usable. The wrapper adds no layout box, so Training still follows the bottom panel's height. The small Agent and
+chart styles load with the page (7.460), so a temporary panel download failure cannot leave Retry with an unstyled
+panel. No dependency was added. After the second review (7.460–7.462), initial JavaScript is 585.86 kB versus
+622.18 kB after the first review and 772.99 kB before either review (193.77, 204.16 and 253.12 kB gzip respectively).
+Deferred code still downloads when used: all JavaScript totals 1,272.28 kB versus 1,269.17 kB before either review.
+This reduces startup work without removing functionality.
+
 `src/gator_workbench/api/app.py` initializes the app and registers four feature modules: settings and
 connections, circuits and tasks, runs and exports, and agents. `api/models.py` owns HTTP request schemas;
 `api/context.py` shares input/output authorization, configuration loading and the start checklist; `api/support.py`
@@ -4496,6 +4559,8 @@ including edits made by Undo. These types add no runtime validation, serializati
 
 Reads managed by `useRequest` and direct JSON GETs have a 30-second deadline. Changing a selection, disabling a read
 or leaving its view cancels the hook's owned transport; shared cached reads keep their own bounded lifetime.
+An older failed connection-list read clears only its own cached promise (7.463), preserving a newer list published
+after a connection was saved. The failed caller still receives its error, and concurrent readers still share a read.
 Refresh replaces an outstanding hook read. Polling still allows one read at a
 time and interval changes retain the current result and outstanding request. Late replies from callbacks that ignore
 cancellation are discarded too. Writes keep their own lifecycle and are not retried by
@@ -4503,6 +4568,8 @@ this mechanism. Log, output-folder and model-structure read errors offer a retry
 
 The configuration validation key is serialized only when the configuration changes. The editors skip renders when
 their inputs are unchanged, and validation issues are grouped once by row rather than filtered for every row (7.130).
+Comparison-file validation hashes pinned initial-design and archive files in 1 MiB reads using the shared file-hash
+helper (7.468). Every validation still checks current bytes; missing-file and digest-mismatch blockers are unchanged.
 
 Tests share isolated HTTP servers and the MOCK helpers in `tests/workbench/helpers.py`, plus controlled
 browser input, passing validation replies, and optional connection fixtures in `frontend/scripts/lib/harness.mjs`.
@@ -4531,6 +4598,10 @@ nothing is measured in the browser's unstyled layout - measured: about one RL ne
 when it was found, for about 100 ms (record 7.178).
 
 ## Tests
+
+The live MOCK browser lifecycle check allows 60 seconds for each Abort to publish its durable saved state, and the
+batch runner gives it a minimum 240-second watchdog (7.459). Its state-order, resume, saved-state and worker-exit
+checks remain unchanged. Other browser checks keep their existing adaptive time limits.
 
 The native preparation scheduling fixture uses `OfflineSizingEnv` for its temporary journals (7.447): atomic JSON
 writes without disk sync, including in spawned lanes. It still exercises the real-backend protocol with fake devices

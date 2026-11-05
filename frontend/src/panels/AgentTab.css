@@ -1,25 +1,57 @@
-.agent-panel { padding: 12px 16px; font-size: 13px; }
+/* The Agent tab reads at the page's size (14 px, record 7.360) with a measured line for prose (record 7.472: it read at
+   13 px with 12 px notes, and a model's facts ran together in one line). */
+.agent-panel { padding: 12px 16px 18px; font-size: 14px; line-height: 1.5; }
 .agent-panel[hidden] { display: none; }
 .agent-heading, .agent-model-heading, .agent-controls, .agent-operation { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.agent-heading > strong { font-size: 16px; }
-.agent-note { color: var(--muted, #626d79); font-size: 12px; line-height: 1.5; }
-.agent-columns { display: grid; grid-template-columns: minmax(290px, 34%) minmax(0, 1fr); gap: 18px; align-items: start; }
-.agent-model { padding: 12px; border: 1px solid var(--border, #cdd3da); border-radius: 5px; margin-bottom: 12px; }
-.agent-model-heading > span { font-size: 12px; }
+.agent-heading { margin-bottom: 4px; }
+.agent-heading > strong { font-size: 17px; }
+.agent-heading > span { color: var(--muted); }
+.agent-note { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.agent-panel > .agent-note { max-width: 72ch; margin: 2px 0 12px; }
+.agent-columns { display: grid; grid-template-columns: minmax(300px, 36%) minmax(0, 1fr); gap: 22px; align-items: start; }
+.agent-column-title { margin: 0 0 8px; font: 600 12px/1.3 var(--f-label); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+/* One model: its name and state on the first line, its description, then its needs as a small table, then its controls. */
+.agent-model { padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; background: var(--card); }
+.agent-model-heading { justify-content: space-between; }
+.agent-model-heading > strong { font-size: 15px; }
+.agent-state { font-size: 12.5px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.agent-state.ready { color: var(--text); border-color: var(--accent); }
 .agent-model p, .agent-message p { margin: 8px 0; line-height: 1.5; }
-.agent-controls button { min-width: 32px; min-height: 30px; display: inline-flex; justify-content: center; align-items: center; }
-.agent-check { border-top: 1px solid var(--border, #cdd3da); margin-top: 10px; padding-top: 10px; font-size: 12px; }
-.agent-error { color: var(--danger, #b3261e); white-space: pre-wrap; overflow-wrap: anywhere; }
-.agent-message { padding: 10px 12px; border-left: 3px solid var(--border, #cdd3da); margin-bottom: 12px; }
-.agent-message.user { border-left-color: var(--accent, #356d9e); }
+.agent-model > p { max-width: 60ch; }
+.agent-needs { margin: 8px 0; border-collapse: collapse; font-size: 13px; }
+.agent-needs th { text-align: left; font-weight: 500; color: var(--muted); padding: 1px 12px 1px 0; white-space: nowrap; }
+.agent-needs td { padding: 1px 0; }
+.agent-controls { margin-top: 10px; }
+/* The controls keep their icons and tooltips (record 7.441) and show their words beside them (7.472). */
+.agent-controls button { min-height: 30px; display: inline-flex; gap: 6px; justify-content: center; align-items: center; padding: 4px 10px; }
+.agent-controls button .sr-only { position: static; width: auto; height: auto; margin: 0; clip: auto; overflow: visible; white-space: nowrap; }
+.agent-check { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; font-size: 13px; }
+.agent-check > strong { display: block; margin-bottom: 4px; }
+.agent-check ul { margin: 4px 0; padding-left: 18px; }
+.agent-check li { margin: 2px 0; }
+.agent-error { color: var(--bad); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A conversation: who speaks is a small label, each turn a measured column of text. */
+.agent-messages { max-width: 78ch; }
+.agent-message { padding: 10px 14px; border-left: 3px solid var(--line); margin-bottom: 14px; }
+.agent-message.user { border-left-color: var(--accent); }
+.agent-message > strong { display: block; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
 .agent-message > p { white-space: pre-wrap; overflow-wrap: anywhere; }
-.agent-proposal table { width: 100%; margin: 8px 0; }
-.agent-proposal th, .agent-proposal td { text-align: left; padding: 5px 8px; }
-.agent-compose { display: flex; flex-direction: column; gap: 8px; }
-.agent-compose textarea { width: 100%; min-height: 70px; resize: vertical; box-sizing: border-box; }
+.agent-proposal { margin: 10px 0 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; }
+.agent-proposal > strong { display: block; margin-bottom: 4px; }
+.agent-proposal table { width: 100%; margin: 8px 0; border-collapse: collapse; }
+.agent-proposal th, .agent-proposal td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+.agent-proposal thead th { font-size: 12px; color: var(--muted); }
+.agent-proposal tbody th { font-weight: 500; }
+.agent-proposal-state { margin-left: 8px; color: var(--muted); }
+.agent-compose { display: flex; flex-direction: column; gap: 8px; max-width: 78ch; }
+.agent-compose label { color: var(--text); font-weight: 600; }
+.agent-compose textarea { width: 100%; min-height: 76px; resize: vertical; box-sizing: border-box; font-size: 14px; line-height: 1.5; }
 .agent-compose button { margin-right: 8px; }
-.agent-operation { padding: 10px; border: 1px solid var(--border, #cdd3da); margin-bottom: 12px; }
+.agent-compose .agent-note { max-width: 72ch; }
+.agent-operation { padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 12px; }
 .agent-operation progress { max-width: 180px; }
-.agent-live pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
-.agent-empty { padding: 30px 10px; color: var(--muted, #626d79); }
+.agent-live pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 12.5px; }
+.agent-empty { padding: 26px 12px; color: var(--muted); max-width: 60ch; }
+.agent-empty ol { margin: 8px 0 0; padding-left: 20px; }
+.agent-empty li { margin: 3px 0; }
 @media (max-width: 950px) { .agent-columns { grid-template-columns: 1fr; } }

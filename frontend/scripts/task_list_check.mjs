@@ -155,7 +155,7 @@ await runChecks(browser, async () => {
   check('every registered task is listed, sorted by name', JSON.stringify(await tw.keys()) === JSON.stringify(['real:fixture_ldo', 'real:fixture_ota', 'ngspice:fixture_div', 'synthetic:gpdk045_ota5']), JSON.stringify(await tw.keys()));
   check('the task the page follows is marked', (await far.evaluate(`${ROWS}.filter(tr => tr.classList.contains('current') && tr.getAttribute('aria-current') === 'true').map(tr => tr.dataset.taskKey)`)).join() === 'synthetic:gpdk045_ota5');
   const hint = await far.evaluate(`${WINDOW}.textContent`);
-  check('the window says what a double click and Details do, and that nothing updates by itself', hint.includes('Double click a task to make the workbench follow it') && hint.includes('Details shows the rest')
+  check('the window says what a double click and Details do, and that nothing updates by itself', hint.includes('Double click a task, press Enter on its row') && hint.includes('Details shows the task and its saved rows')
     && hint.includes('Nothing here updates by itself') && /read at \d\d:\d\d:\d\d/.test(hint), hint.slice(0, 200));
   await far.evaluate(`${WINDOW}.querySelector('details.more summary').click()`);
   check('"What the columns mean" explains each column', await far.until(`${WINDOW}.querySelector('details.more').open && ${WINDOW}.querySelector('details.more').textContent.includes('Sizes / results: How many sizes')`, 20));

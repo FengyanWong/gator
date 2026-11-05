@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import pyarrow as pa
 from fastapi.testclient import TestClient
 
 from gator_workbench import profiles, recipes, schema, tasks
@@ -40,8 +41,8 @@ def baseline_run(tmp_path, monkeypatch, run_dir, *, run_id='r1', run_kind='basel
         def __init__(self, data_dir):
             reads.append(Path(data_dir))
 
-        def rows(self, table, columns=None):
-            return [{c: row[c] for c in columns} for row in tables[table]]
+        def iter_batches(self, table, columns=None):
+            yield pa.RecordBatch.from_pylist([{c: row[c] for c in columns} for row in tables[table]])
     monkeypatch.setattr('gator_workbench.storage.dataset.DatasetReader', FakeReader)
     return manifest, reads
 
@@ -153,8 +154,8 @@ def test_a_maestro_measured_task_records_its_own_outputs_as_the_reference(tmp_pa
         def __init__(self, data_dir):
             pass
 
-        def rows(self, table, columns=None):
-            return [{c: row[c] for c in columns} for row in tables[table]]
+        def iter_batches(self, table, columns=None):
+            yield pa.RecordBatch.from_pylist([{c: row[c] for c in columns} for row in tables[table]])
     monkeypatch.setattr('gator_workbench.storage.dataset.DatasetReader', MaestroReader)
     done = profiles.adopt_baseline_run(run_dir)
     assert done['recorded'] is True, done

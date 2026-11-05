@@ -15,7 +15,6 @@ Levels:
 """
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import math
 from pathlib import Path
@@ -27,6 +26,7 @@ from .profile_store import task_spec_registry
 from .schema import WorkbenchConfig
 from .spec_equations import parse, parse_size_formula, size_matches
 from .start_grid import row_start_issue
+from .storage.atomic import sha256_file
 from .task_registry import verified_spec_registry
 
 _PARAMETER_REL_TOL = 1e-09
@@ -862,7 +862,7 @@ def _comparison_rules(config, report) -> None:
         if path is None:
             continue
         try:
-            digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+            digest = sha256_file(path)
         except OSError as exc:
             report.add('blocker', 'comparison_file_missing', f'run.comparison.{name}', f'{path} cannot be read: {exc}')
             continue

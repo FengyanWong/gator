@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 const ts = require('typescript');
 const path = fileURLToPath(new URL('../src/panels/TableView.tsx', import.meta.url));
 const source = readFileSync(path, 'utf8');
-function load(text, SetClass = Set) {
+function load(text) {
   const compiled = ts.transpileModule(text, {
     fileName: path,
     reportDiagnostics: true,
@@ -19,7 +19,7 @@ function load(text, SetClass = Set) {
   });
   assert.equal(compiled.diagnostics?.filter(d => d.category === ts.DiagnosticCategory.Error).length ?? 0, 0);
   const moduleExports = {};
-  new Function('require', 'exports', 'Set', compiled.outputText)(require, moduleExports, SetClass);
+  new Function('require', 'exports', compiled.outputText)(require, moduleExports);
   return moduleExports;
 }
 const { arrangeRows, TableHead } = load(source);
@@ -140,7 +140,7 @@ check('synthetic task/run columns derive search text and expensive sort values o
       return `${task.task_key} common folder`;
     }, task => {
       calls.value++;
-      // The current Tasks table's runsOf callback filters all runs and sorts those belonging to this task.
+      // The original Tasks table's runsOf callback filtered all runs and sorted those belonging to this task.
       const mine = runs.filter(r => { calls.runRowsExamined++; return r.task_key === task.task_key; })
         .sort((a, b) => String(b.created_utc ?? '').localeCompare(String(a.created_utc ?? '')));
       return mine.length;
@@ -157,18 +157,18 @@ check('synthetic task/run columns derive search text and expensive sort values o
   counts = { tasks: tasks.length, runs: runs.length, before: old.calls, after: current.calls };
 });
 
-// Reconstruct just the previous two-line membership expression. Both versions execute their actual JSX with the
+// Reconstruct just the original linear membership expression. Both versions execute their actual JSX with the
 // installed React runtime; no DOM shim or render lifecycle is needed to inspect their elements and call handlers.
-const membership = '  const selected = new Set(view.selected);\n  const every = shown.every(r => selected.has(id(r)));';
+const membership = '  const every = shown.every(r => view.selectedIds.has(id(r)));';
 assert.equal(source.split(membership).length, 2, 'Match the exact new header expression once');
 const beforeHeader = source.replace(membership, '  const every = shown.every(r => view.selected.includes(id(r)));');
 const oldTableHead = load(beforeHeader).TableHead;
-function headerResult(component, shown, selected) {
+function headerResult(component, shown, selected, selectedIds = new Set(selected)) {
   let rowIdReads = 0;
   const changes = [];
   const tree = component({ shown, columns: [], disabled: false, what: 'runs',
     id: r => { rowIdReads++; return r.id; },
-    view: { selected, sort: { key: 'name', down: false }, setSelected: value => changes.push(value), sortBy: unread },
+    view: { selected, selectedIds, sort: { key: 'name', down: false }, setSelected: value => changes.push(value), sortBy: unread },
   });
   const input = tree.props.children.props.children[0].props.children;
   // React 18 puts ref on the element; React 19 also exposes it as a prop. Read a data descriptor without its warning getter.
@@ -202,7 +202,7 @@ check('header checkbox and select-all behavior preserve empty, partial, all, off
   }
 });
 
-check('header selection membership is rebuilt for each render, with the same short-circuit row reads', () => {
+check('header follows the current selection membership, with the same short-circuit row reads', () => {
   const selected = [], shown = ['a', 'b'].map(id => ({ id }));
   for (const [ids, reads] of [[[], 1], [['a'], 2], [['a', 'b'], 2], [['offscreen'], 1]]) {
     selected.splice(0, selected.length, ...ids);
@@ -227,8 +227,8 @@ check('fully selected headers read each selected ID once instead of repeated lin
       class CountedSet extends Set {
         has(value) { calls.membershipChecks++; return super.has(value); }
       }
-      const component = old ? oldTableHead : load(source, CountedSet).TableHead;
-      const { state } = headerResult(component, shown, selected);
+      const component = old ? oldTableHead : TableHead;
+      const { state } = headerResult(component, shown, selected, old ? null : new CountedSet(selected));
       assert.equal(state.checked, true);
       calls.rowIdReads = state.rowIdReads;
       return calls;

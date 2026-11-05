@@ -141,6 +141,40 @@ const valuesOf = (built, label) => built.series.find(s => s.label === label)?.va
   check('a tail that could not be read (journal rewritten) drops the old tail and keeps the final rows', store.evaluations.n === 6 && !store.tailComplete);
 }
 
+// A small spec page joins only the evaluations it names, including late, duplicate and out-of-order sequences.
+{
+  const store = new TrainingStore('/fixture/spec-joins');
+  const rows = Array.from({ length: 50000 }, (_, i) => ({ commit_seq: 2 * (i + 1) }));
+  rows[3].commit_seq = 999999; rows[7].commit_seq = 2;
+  store.apply(answer({ served: 1, total: 1, final: chunk({ evaluations: rows }) }));
+  const spec = (seq, value, metric = 'gain') => ({ commit_seq: seq, metric_name: metric, raw_value: value,
+    satisfied: true, failure_reason: null });
+  const join = specs => store.apply(answer({ start: 1, served: 1, total: 1, final: chunk({ specs }) }));
+  const seq = store.evaluations.cols.seq;
+  let reads = 0;
+  store.evaluations.cols.seq = new Proxy(seq, { get(target, key) {
+    if (typeof key === 'string' && /^\d+$/.test(key)) reads++;
+    return Reflect.get(target, key, target);
+  } });
+  try { join([spec(100000, 91), spec(100000, 62, 'pm')]); }
+  finally { store.evaluations.cols.seq = seq; }
+  const cols = store.evaluations.cols;
+  check('two specs for the newest of 50,000 evaluations inspect only that evaluation', reads === 1
+    && cols['spec:gain'][49999] === 91 && cols['spec:pm'][49999] === 62, `${reads} sequence reads`);
+  const stamp = store.specChanges.stamp;
+  join([spec(2, 12), spec(4, 14), spec(999999, 19), spec(3, 999), spec(null, 999), spec(undefined, 999)]);
+  check('sparse late specs keep the last duplicate and find out-of-order sequences', Number.isNaN(cols['spec:gain'][0])
+    && cols['spec:gain'][7] === 12 && cols['spec:gain'][1] === 14 && cols['spec:gain'][3] === 19);
+  check('missing sequences and gaps never attach a spec to a neighbouring evaluation',
+    Array.from(cols['spec:gain'].subarray(0, store.evaluations.n)).filter(Number.isFinite).length === 4);
+  check('late spec joins invalidate chart preparation from the earliest changed row', store.specChanges.since(stamp) === 1);
+  const dense = new TrainingStore('/fixture/dense-spec-joins');
+  dense.apply(answer({ served: 1, total: 1, final: chunk({ evaluations: [2, 7, 2].map(s => evaluation(s)),
+    specs: [spec(2, 12), spec(7, 17), spec(3, 999)] }) }));
+  check('dense initial specs preserve the same duplicate, gap and out-of-order behavior',
+    same(Array.from(dense.evaluations.cols['spec:gain'].subarray(0, 3)), [NaN, 17, 12]));
+}
+
 // ---- 3. smoothing --------------------------------------------------------------------------------------------------------
 {
   const raw = [1, 2, null, 3, undefined, 4, 10];

@@ -718,3 +718,23 @@ One row per commit, newest last.
 | `adcff22` | 11-02 15:45 | 7.455 | GitHub tidy-up: main level with workbench, merged Codex branch deleted on GitHub (record 7.455) |
 | `d563e24` | 11-02 16:53 | 7.456 | Pre-registrations of 2026-11-02, written before any run: the next held-out circuit for RQ5 (not run) and Amendment A3, the rehearsal arm |
 | `14ddd1b` | 11-02 18:23 | 7.456 | Amendment A3 revision 2, before any RA+R evaluation: the first queue's three zero-cost stops and runtime gator-runtime-bmr-429e3df7 |
+| `6b4a4ad` | 11-03 04:20 | 7.456 | Rehearsal arm complete, MScR experiments finished, thesis revision 30 (record 7.456) |
+| `aae3edf` | 11-03 04:26 | 7.456 | Record 7.456: thesis revision 30's second follow-up (trims, 29,911 conservative) |
+| `e778bda` | 11-04 04:18 | 7.457 | Load optional workbench panels on demand |
+| `262db32` | 11-04 04:20 | 7.458 | Compact frontend controls and release temporary Agent output |
+| `b0a780f` | 11-04 04:21 | 7.459 | Allow durable mock saves to finish in browser checks |
+| `4bd4f57` | 11-04 04:22 | 7.457–7.459 | Record lighter workbench commit history |
+| `f24423d` | 11-04 05:06 | 7.460–7.462 | Reduce startup payload and repeated frontend scans; 1,068 browser/data/unit checks pass |
+| `084cc37` | 11-04 05:06 | 7.460–7.462 | Record second frontend lightening review |
+| `97984ce` | 11-04 05:16 | 7.463–7.464 | Index frontend lookups and stream reachability evidence; 789 checks/tests pass |
+| `09eb22c` | 11-04 05:22 | 7.465–7.466 | Stream baseline evidence and guard PDK list refreshes; 91 tests/checks pass |
+| `deb264c` | 11-04 05:29 | 7.467–7.468 | Guard run brief replies and bound validation hashing; 247 tests/checks pass, 12 optional tests skip |
+| `30f766b` | 11-04 05:30 | 7.467–7.468 | Record autonomous review validation |
+| `af0f9e0` | 11-04 05:33 | 7.469 | Bound ngspice deck identity hashing; six focused fake-runner tests pass |
+| `037d0b0` | 11-04 05:34 | 7.469 | Record bounded deck hashing review |
+| `e49da39` | 11-04 07:06 | 7.470 | Bound local runtime error-tail reads; 76 local-agent tests pass |
+| `840766d` | 11-04 21:34 | 7.471 | Before landing the lightened workbench: panel errors say what failed, Copy path is text again (record 7.471) |
+| `0e16d17` | 11-04 22:08 | 7.471 | Browser checks close their windows without racing their own DevTools session (record 7.471) |
+| `7670617` | 11-04 22:30 | 7.471 | Record 7.471: Codex's lightened workbench made ready to land, with the review's fixes and the full proofs |
+| `ed669ce` | 11-04 23:22 | 7.472 | README for a public reader, with the name explained; the Agent tab easier to read (record 7.472) |
+| `6c53930` | 11-05 02:59 | 7.473 | MIT licence (record 7.473) |

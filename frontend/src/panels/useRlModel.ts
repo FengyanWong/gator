@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { SIMPLE_REWARD, useRequest } from '../store';
 import { api, Json } from '../api';
-import { modelNameAt, useSavedModelsView } from './ModelChooser';
+import { modelNameAt, useSavedModelsView } from './modelView';
 import { DESIGN_NAME, designName, ENCODER_SHORT, pointEvaluations, pointText } from '../lineage';
 import { LOADS, NETWORK_FIELDS, networkOf, pick, pointKey, readSavePoint, withSavePoint } from '../savePoint';
 import { styled, usePopupWindow } from './popupWindow';
@@ -469,14 +469,25 @@ function useOpenAtBlock(networkWindow: ReturnType<typeof usePopupWindow>) {
   const openAt = (anchor: string | null) => { if (networkWindow.open() && anchor) setOpeningAt(anchor); };
   useEffect(() => {
     const popup = networkWindow.popup, id = openingAt;
-    if (!popup || !id) return;
-    setOpeningAt(null);
-    void styled(popup).then(() => {
-      const block = popup.closed ? null : popup.document.getElementById(id);
+    if (!popup) { if (id) setOpeningAt(null); return; }
+    if (!id) return;
+    let current = true;
+    const reveal = () => {
+      const block = current && !popup.closed ? popup.document.getElementById(id) : null;
       if (!block) return;
+      observer.disconnect();
       for (let fold = block.closest('details'); fold; fold = fold.parentElement?.closest('details') ?? null) fold.open = true;
       block.scrollIntoView({ block: 'center' });
+      setOpeningAt(null);
+    };
+    // The optional window may still be downloading. Reveal the block after its content and styles arrive, once per press.
+    const observer = new MutationObserver(reveal);
+    void styled(popup).then(() => {
+      if (!current || popup.closed) return;
+      observer.observe(popup.document.body, { childList: true, subtree: true });
+      reveal();
     });
+    return () => { current = false; observer.disconnect(); };
   }, [openingAt, networkWindow.popup]);
   return openAt;
 }

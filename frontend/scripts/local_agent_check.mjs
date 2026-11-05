@@ -58,7 +58,8 @@ await runChecks(browser, async () => {
         }
         if (job.kind === 'deploy') deployed = true;
       }
-      return reply(job);
+      const raw = job.kind === 'chat' ? 'Synthetic live model output' : '';
+      return reply({ ...job, output: raw.slice(Number(url.searchParams.get('offset') ?? 0)), offset: raw.length });
     }
     return page.readOrRefuse(params, refused, { reads: true });
   });
@@ -93,7 +94,7 @@ await runChecks(browser, async () => {
   await send('Suggest a seed.'); await until(has('Proposed editor changes'), 80);
   check('suggestion is previewed without automatically editing', (await page.savedConfig()).run.seed === 0);
   check('context continuation is disclosed', await evaluate(has('2 older messages')));
-  await clickText('Apply proposed changes'); await sleep(1000);
+  await clickText('Apply changes'); await sleep(1000);
   check('Apply uses the normal configuration editor', (await page.savedConfig()).run.seed === 123);
   await evaluate(`document.querySelector('button[title^="Undo:"]').click()`);
   check('one Undo restores the previous configuration', (await page.savedConfig()).run.seed === 0);
@@ -118,8 +119,19 @@ await runChecks(browser, async () => {
   await until(has('editor changed during validation'), 40);
   check('edit during validation prevents application', await evaluate(has('No changes applied.')));
   chatMode = 'held'; await send('Long uncapped answer.'); await until(has('Synthetic operation'), 40);
+  await until(`!!document.querySelector('.agent-live')`, 40);
+  check('collapsed live output does not populate a hidden text node', await evaluate(`!document.querySelector('.agent-live pre')`));
+  await evaluate(`document.querySelector('.agent-live summary').click()`);
+  check('expanding live output shows the accumulated stream', await until(`document.querySelector('.agent-live pre')?.textContent === 'Synthetic live model output'`, 40));
+  await evaluate(`document.querySelector('.agent-live summary').click()`);
+  check('collapsing live output releases its rendered text', await until(`!document.querySelector('.agent-live pre')`, 40));
   await clickIcon('Cancel Agent operation'); await until(has('Operation cancelled.'), 80);
   check('cancellation stops the active job', active === null);
+  const beforeNew = JSON.stringify(await page.savedConfig());
+  await clickText('New conversation');
+  check('new conversation clears prior messages and proposals without editing the configuration',
+    await evaluate(`document.querySelectorAll('.agent-message, .agent-proposal, .agent-live').length === 0`)
+      && JSON.stringify(await page.savedConfig()) === beforeNew);
   await clickIcon('Undeploy'); await until(has('Install and deploy a model'), 40);
   check('undeploy removes the composer', !deployed && await evaluate(`!document.querySelector('#agent-message')`));
   await clickIcon('Delete registration'); await until(has('external benchmark file was preserved'), 40);

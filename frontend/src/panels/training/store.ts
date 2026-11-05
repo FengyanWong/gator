@@ -340,11 +340,21 @@ export class TrainingStore {
   private joinSpecValues(specs: Columns, fresh: number) {
     const table = this.evaluations;
     const rowOf = new Map<number, number>();
-    const seq = table.cols.seq;
-    for (let row = 0; row < table.n; row++) rowOf.set(seq[row], row);
+    const seq = table.cols.seq, seqs = specs.commit_seq as unknown[];
+    if (specs.n * 2 < table.n) {
+      // A small live page usually names the newest evaluations. Index only its keys, newest first so the last
+      // duplicate wins as before. Missing or out-of-order sequences still work; no ordering assumption or kept index.
+      const wanted = new Set(seqs);
+      for (let row = table.n - 1; row >= 0 && wanted.size; row--) {
+        const key = seq[row];
+        if (wanted.delete(key)) rowOf.set(key, row);
+      }
+    } else {
+      // A dense initial page keeps one linear pass, without a second index of all its spec rows.
+      for (let row = 0; row < table.n; row++) rowOf.set(seq[row], row);
+    }
     const reasonWords = this.words.reason;          // reasons share the store's word list
-    const metric = (specs.metric_name as Coded), values = specs.raw_value as unknown[], satisfied = specs.satisfied as unknown[],
-      seqs = specs.commit_seq as unknown[];
+    const metric = (specs.metric_name as Coded), values = specs.raw_value as unknown[], satisfied = specs.satisfied as unknown[];
     const reasons = reasonWords.decode(specs.failure_reason, specs.n);
     let rewritten = Infinity;
     for (let specRow = 0; specRow < specs.n; specRow++) {

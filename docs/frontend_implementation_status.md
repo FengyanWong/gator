@@ -36,7 +36,8 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.401-7.416.md`](workbench-log/7.401-7.416.md) | entries 7.401–7.416 |
 | [`7.417-7.427.md`](workbench-log/7.417-7.427.md) | entries 7.417–7.427 |
 | [`7.428-7.438.md`](workbench-log/7.428-7.438.md) | entries 7.428–7.438 |
-| [`7.439-and-later.md`](workbench-log/7.439-and-later.md) | entries 7.439 onwards: the OPEN file |
+| [`7.439-7.459.md`](workbench-log/7.439-7.459.md) | entries 7.439–7.459 |
+| [`7.460-and-later.md`](workbench-log/7.460-and-later.md) | entries 7.460 onwards: the OPEN file |
 | [`self-improving-frontend.md`](workbench-log/self-improving-frontend.md) | the branch self-improving-frontend: its own records SIF-1 onwards (not 7.N), merged into workbench 2026-10-22 and 2026-10-24 |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
@@ -48,13 +49,15 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 
 `7.428-and-later.md` is also a pointer: entries 7.428–7.438 were archived unchanged at 59.4 kB before the model-scan fix (7.439).
 
+`7.439-and-later.md` is also a pointer: entries 7.439–7.459 were archived unchanged before the next lightening review (7.460).
+
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.458 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.439-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+**Rolling the open file over:** when the open file passes entry 7.479 or 60 kB, whichever comes first, move its entries
+unchanged into `docs/workbench-log/7.460-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
 the old name as a pointer (like the earlier pointers), change the file table above, and then update `CLAUDE.md` and
 `functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
 2026-10-07, record 7.268 - eleven times the mark; do it in time. `7.266-and-later.md` was rolled over at entry 7.278
@@ -524,3 +527,20 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.454 | Reverse port complete (12 runs, 8,100 evaluations, independent check 415/415): second-PDK models help on GPDK045 OTA5t only; RING3 ends as well with more feasible designs than any scratch seed; eased LDO1 no bar; probes 0/300. Thesis revision 26 (gator-thesis 54ac5e4); not pushed |
 | 7.455 | GitHub tidy-up: workbench (nine commits, through 7.454) and the thesis repository (revisions 25-26) pushed; main brought level with workbench; the merged Codex branch deleted on GitHub (kept locally for Codex's worktree) |
 | 7.456 | Rehearsal arm (archive plan A3) complete: 9 runs, 7,200 evaluations, audited, independent check 117/117, 27 finalists exact. Rehearsal helps RA+ by its rule (flip-flop -9 %, LDO -3 %, amplifier +1 %; no target) but does not replace T+. Pre-registrations d563e24/14ddd1b; held-out circuit not run. All MScR experiments finished. Thesis revision 30 (gator-thesis 6b99f8b, 605a06b, 29370e5); not pushed |
+| 7.457 | Training, Agent and the RL model window load on demand; initial JavaScript 772.99 -> 621.82 kB, retained tab state and panel-local retry; no added dependency |
+| 7.458 | Compact labelled icons, shorter editor/output/Agent guidance and lighter hidden Agent output; 60 frontend scripts / 3,069 checks pass across the full sweep and final focused verification |
+| 7.459 | Live MOCK browser check allows durable stop saves 60 seconds and has a 240-second minimum script watchdog; full saved-state/worker-exit assertions retained, 23 checks passed |
+| 7.460 | Keep small panel styles with the page so a failed deferred stylesheet cannot break Retry; archive 7.439–7.459 |
+| 7.461 | Defer Virtuoso/PDK rendering, shorten PDK guidance; startup JavaScript 5.8% smaller again, 24.2% across both reviews |
+| 7.462 | Share Task run summaries and bound sparse Training joins; 50,000-row tail fixture needs one sequence read |
+| 7.463 | Share table selection and unsaved-follower lookups; preserve a newly saved connection list after an older read fails |
+| 7.464 | Stream reachability evidence; filter/project before Python conversion while retaining required-column checks |
+| 7.465 | Stream baseline evidence, converting only its selected rows while preserving later-part validation and duplicate semantics |
+| 7.466 | Keep the newest PDK list after overlapping reads or popup closure; reproduced stale success/error cases now pass |
+| 7.467 | Guard run-brief replies and loading state; skip superseded status reads and reuse its run lookup only while open |
+| 7.468 | Reuse bounded SHA-256 reads for comparison validation; unchanged pinning and missing-file blockers |
+| 7.469 | Bound ngspice candidate-deck hashing to 1 MiB reads; preserve identity and tamper checks |
+| 7.470 | Read only the local runtime's stderr tail while preserving its existing error detail |
+| 7.471 | Codex's lightened workbench landed after the review's fixes (panel errors with Reload, Copy path text again, unit-test script, owed rows); full suites pass; only workbench and main remain |
+| 7.472 | README for a public reader with the name GATOR explained; the Agent tab readable: page-size text, Models and Conversation columns, state pills, a needs table, controls with words, plain notes; not live |
+| 7.473 | The MIT licence: LICENSE, the SPDX field in pyproject.toml (setuptools 77), a Licence section in the README |

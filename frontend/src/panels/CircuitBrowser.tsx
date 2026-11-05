@@ -8,6 +8,9 @@ import { Icon } from './Icons';
 
 export { gateText };
 
+/** A first read needs the testbench where the task simulates and keeps its Maestro test (SIF-88). */
+export const NO_TESTBENCH = "Choose the cell's Testbench cell first: a task simulates the testbench and keeps its Maestro test there.";
+
 export const namedTestbench = (cells: Json, cell?: string | null): string | null => {
   if (!cells || !cell) return null;
   const found = (cells.cells ?? []).filter((c: Json) => c.has_schematic && /^tb_/i.test(c.name) && c.name.slice(3) === cell).map((c: Json) => c.name);

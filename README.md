@@ -100,6 +100,12 @@ rules of the original setup are in the [workbench reference](docs/workbench.md#s
 - The workbench, the records and this README were written with the help of coding agents; the project's records say
   what was done by whom and when.
 
+## Licence
+
+GATOR is released under the [MIT licence](LICENSE). The licence covers this repository's code and documents; it
+does not cover Cadence Virtuoso, Spectre, any PDK, the NVIDIA models or the other software it works with, each of
+which has its own terms.
+
 ## History
 
 The milestone paragraphs of the first README and its reference sections are preserved unchanged in

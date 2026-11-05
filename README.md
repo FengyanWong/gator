@@ -1,60 +1,75 @@
 # GATOR
 
-**GATOR** stands for **Graph-Aware Transformer Optimizer for Reinforcement learning**. It is a research workbench
-for sizing analog circuits: choosing device widths, lengths, multipliers and other parameters of a circuit whose
-connectivity is fixed so that it meets its electrical specifications.
+GATOR sizes analog circuits. Give it a circuit whose connections are fixed, the values it may change (device widths,
+lengths, multipliers and the like) and the specifications to meet. It proposes values, simulates every proposal in a
+real circuit simulator, and learns from the results.
 
-- **Graph-aware:** a circuit becomes a graph of devices and nets that keeps terminal identity, hierarchy and parameter
-  bindings. Nothing about the circuit is flattened into a feature vector by hand.
-- **Transformer:** a graph transformer encodes that graph. The encoder is a swappable part: a plain graph transformer,
-  RGCN, GATv2, GraphGPS and GATOR's own CircuitGPS and parameter-group cross-attention are provided.
-- **Optimizer:** the policy proposes one action per independent parameter group; actions are mapped to legal physical
-  values with bounds, grids and integer domains before anything is simulated. A trust-region Bayesian optimiser
-  (TuRBO-1) and a Pareto optimiser share the same evaluation interface, so learned and classical search can be compared
-  on equal terms.
-- **Reinforcement learning:** the policy is trained with Soft Actor-Critic from simulation results, online during a
-  run or offline from an archive of earlier runs, and a trained model can be fine-tuned on a new task, a new process or
-  a new circuit.
+```mermaid
+flowchart LR
+    A["Circuit, sizes and specifications"] --> B["Circuit graph"]
+    B --> C["Graph encoder and policy"]
+    C --> D["Legal device sizes"]
+    D --> E["Circuit simulator"]
+    E --> F["Measurements and reward"]
+    F -. "learn" .-> C
+```
 
-Every candidate design is evaluated by a real circuit simulator. GATOR drives Cadence Virtuoso schematics and Spectre
-through the [virtuoso-bridge](https://github.com/Arcadia-1/virtuoso-bridge-lite) package, or ngspice netlists directly.
-It records every evaluation, keeps real simulations inside an authorised budget, and writes data rather than reports.
+The name stands for **Graph-Aware Transformer Optimizer for Reinforcement learning**:
 
-GATOR was built for an MSc by Research at the University of Edinburgh's School of Engineering. Its experiments are
-finished; the code stays usable, and this repository is its complete record.
+- **Graph-aware:** the circuit is read from its netlist as a graph of devices and nets. The graph keeps which
+  terminal of a device touches which net (a gate is not a drain), the hierarchy, and which devices share a value.
+- **Transformer:** a neural network reads that graph, by default a graph transformer. This encoder can be swapped;
+  six are included.
+- **Optimizer:** each step proposes one value per independent parameter (matched devices share one). Every proposal
+  is moved to a legal value, inside its bounds and on its grid, before it is simulated.
+- **Reinforcement learning:** the network learns by trial and error from the simulation results, with the Soft
+  Actor-Critic algorithm (SAC), during a run or from an archive of earlier runs. A trained model can then be trained
+  further on new specifications, another process or another circuit.
 
-## What is in the box
+Two classical searches can take the network's place in a run, for comparison on equal terms: a trust-region Bayesian
+optimiser (TuRBO-1) and a Pareto optimiser.
 
-- **A browser workbench** ([frontend/](frontend/), served by [src/gator_workbench/](src/gator_workbench/)): read a
-  circuit from Virtuoso or an ngspice netlist, edit its parameters, probes and specifications, start, pause, continue
-  and audit runs, compare saved models, check a design at process corners, and ask a local language model for advice
-  on settings. The [workbench reference](docs/workbench.md) describes every panel.
-- **The optimizer library** ([src/analog_optimizer/](src/analog_optimizer/)): the netlist parser, the circuit graph,
-  parameter actions, measurements and specifications, the reward, the encoders, SAC, replay and checkpoints, and the
-  simulator backends. The [optimizer package](docs/optimizer-package.md) describes its contracts. Its source digest
-  gates saved models and audits: a saved model loads only under the code and library versions it was saved with.
-- **Research entry points** ([examples/](examples/)): the milestone scripts, benchmarks and audits behind the recorded
-  results, some pinned by hash.
-- **A development record** ([docs/](docs/README.md)): dated records of every change and experiment, the research
-  decisions, plans with their outcomes, and frozen evidence. The [functionality reference](docs/functionality-reference.md)
-  maps each feature to its code, tests and record.
+The simulator is Cadence Spectre on Virtuoso schematics, reached through the
+[virtuoso-bridge](https://github.com/Arcadia-1/virtuoso-bridge-lite) package, or the free ngspice on SPICE netlists.
+Every simulated design is recorded, and a run never simulates more designs than you approved when you pressed Start.
+
+GATOR was built by Fengyan Wang for an MSc by Research at the University of Edinburgh's School of Engineering. The
+experiments are finished and the code stays usable. This repository holds the code and the written record; the run
+data, the saved models and the thesis are not in it.
 
 ## What the experiments found
 
-In short: a model pretrained on related sizing tasks finds feasible designs sooner on a new task, and transfers across
-a process change on two of three ported circuits, but it does not reliably find better designs than learning from
-scratch, and on a published regulator Bayesian optimisation found more feasible designs than every SAC variant. Frozen,
-unadapted models produced no feasible design anywhere. Against a shared archive of earlier designs, trust-region Bayesian
-optimisation with that archive stayed the best fixed-target method across three seeds. The dated records under
-[docs/](docs/README.md) hold the numbers; the manuscripts live in a separate private repository.
+A design *passes* when it meets every specification, and a run normally had 800 simulated designs. In short: reusing
+a trained model helps once it is trained further on the new task, and how much depends on the task.
+
+- **New specifications, same circuit:** a model pretrained on two related tasks reached passing designs earlier on
+  three analog circuits and a flip-flop; on the regulator and the flip-flop a run from scratch found none
+  ([records 7.310 and 7.314](docs/workbench-log/7.301-7.323.md)).
+- **Another process:** models trained in the generic 45 nm PDK raised the share of passing designs among the first
+  hundred from 3 % to 60-66 % on an amplifier and from 2 % to 29-41 % on a ring oscillator moved to a second PDK; on
+  a regulator almost nothing passed from any start. In the reverse direction only the amplifier gained
+  ([record 7.329](docs/workbench-log/7.324-7.335.md), [record 7.454](docs/workbench-log/7.439-7.459.md)).
+- **A circuit the model had not seen:** a general model, trained on the recorded designs of several circuits, raised
+  that early share from 21 % to 79 % on a telescopic amplifier ([record 7.330](docs/workbench-log/7.324-7.335.md)).
+- **Not better final designs:** a run from a trained model usually ended level with a run from scratch, and on the
+  ring oscillator its best designs used about twice the power.
+- **No use without that further training:** a trained model that only proposed designs passed with none of 300 on
+  every circuit moved to another process and on four circuits from a published study.
+- **Bayesian optimisation was stronger on a published regulator:** 337 to 396 passing designs of 800, against at most
+  264 in any SAC run ([record 7.318](docs/workbench-log/7.301-7.323.md)). Given a shared archive of earlier designs,
+  it also stayed the best method for a fixed target over three seeds
+  ([record 7.453](docs/workbench-log/7.439-7.459.md)).
+
+Most comparisons have one to three runs per arm, and every evaluation is a nominal schematic simulation.
+[The experiments in plain words](docs/plan-transfer-experiment.md#1-in-plain-words) lists the questions asked.
 
 ## Start
 
-GATOR runs on Linux, including WSL, with Python 3.10 and Node.js. Real simulation needs a simulator host: Cadence
-Virtuoso with Spectre reached through the bridge, or a local ngspice. Without either, the mock backend and the
-recorded data still exercise the whole workbench.
+GATOR runs on Linux, WSL included, with Python 3.10 and Node.js (18, or 20 and later; 24 was used). Training uses the
+CPU build of PyTorch, so no GPU is needed. Use a virtual environment of your own; it grows to about 1 GB.
 
 ```bash
+git clone https://github.com/FengyanWong/gator.git && cd gator
 python -m pip install -c constraints.txt torch --index-url https://download.pytorch.org/whl/cpu
 python -m pip install -c constraints.txt -e '.[graph,test,web,webtest]'
 (cd frontend && npm ci && npm run build)
@@ -62,51 +77,79 @@ OMP_NUM_THREADS=1 PYTHONPATH="$PWD/src" python -m pytest -q -n 4 --dist loadgrou
 PYTHONPATH="$PWD/src" python -m gator_workbench.cli serve --port 8765
 ```
 
-Then open <http://127.0.0.1:8765/>. [constraints.txt](constraints.txt) pins the exact torch, torch-geometric, numpy
-and networkx versions: saved models load only under the versions they were saved with, and `torch==2.14.0+cpu` exists
-only on PyTorch's CPU index, so torch is installed from there first. The test command uses four workers; on a quiet
-machine use twelve. Tests that need local evidence folders report a skip. The environment and the shared-machine
-rules of the original setup are in the [workbench reference](docs/workbench.md#start).
+Then open <http://127.0.0.1:8765/>. On a fresh clone (5 November 2026) these commands ran as written: about 2,850
+tests passed in three minutes and 35 to 40 were skipped, because they read evidence folders that are not in the
+repository or need ngspice, BoTorch or the bridge. [constraints.txt](constraints.txt) pins the exact torch,
+torch-geometric, numpy and networkx versions, because a saved model loads only under the versions it was saved with;
+`torch==2.14.0+cpu` exists only on PyTorch's CPU index, so torch is installed from there first.
 
-## Repository map
+What you can do next depends on the simulator you have:
+
+- **None:** the tests run on a stand-in circuit of their own, and the page opens with no task to run. This prints the
+  graph GATOR builds from a five-transistor amplifier's netlist:
+
+  ```bash
+  PYTHONPATH="$PWD/src" python examples/netlist_demo.py --config configs/gpdk045_opamp.json examples/circuits/gpdk045_ota5.scs
+  ```
+- **ngspice:** in the Connection window add an "ngspice on this machine" connection. In the Tasks window choose
+  **From an ngspice netlist...** and then **Example**, a five-transistor amplifier on textbook transistor models
+  that needs no PDK. Save it as a task, fill in Specs and press Start. The details are in
+  [the ngspice window](docs/workbench.md#an-ngspice-netlist-as-a-task-the-ngspice-window-added-2026-09-23-user-request).
+- **Cadence Virtuoso and Spectre:** you also need virtuoso-bridge 0.8.0, installed separately, a PDK, and a cell with
+  its testbench. See [connection profiles](docs/workbench.md#connection-profiles-section-21) and
+  [a task's Virtuoso side](docs/workbench.md#a-tasks-virtuoso-side-the-cell-it-works-in-saving-the-run). On a test
+  circuit, 800 designs took 8 to 14 minutes with four simulations at a time.
+
+## What is in the repository
 
 | Location | What it holds |
 |---|---|
-| [src/gator_workbench/](src/gator_workbench/) | The backend: saved tasks, run control, the recorded data, the local Agent; see the [workbench reference](docs/workbench.md). |
-| [src/analog_optimizer/](src/analog_optimizer/) | Circuit graphs, backend adapters and the learner; see the [optimizer package](docs/optimizer-package.md). |
-| [frontend/](frontend/) | The React/TypeScript page and its browser checks. |
-| [tests/](tests/) | Offline tests, controlled fakes and pinned fixtures. |
-| [configs/](configs/) | Parser mappings and research configurations; audit-pinned files stay unchanged. Local settings are git-ignored. |
-| [examples/](examples/) | Research entry points, benchmarks and audits. |
-| [docs/](docs/README.md) | The document index: references, plans, frozen evidence and the development records. |
-| artifacts/, outputs/ | Local evidence, run data, logs and saved models; git-ignored. |
-| [.agents/](.agents/) | A skill with the research contracts, written for coding agents. |
-| [CLAUDE.md](CLAUDE.md) | Working rules for the coding agents that helped build GATOR. |
-| [pyproject.toml](pyproject.toml), [constraints.txt](constraints.txt) | Dependencies, commands and the exact model-compatible versions. |
+| [frontend/](frontend/) | The browser page (React, TypeScript): read a circuit from Virtuoso or an ngspice netlist, edit its parameters, probes and specifications, start, pause and continue runs, read their data and compare saved models. |
+| [src/gator_workbench/](src/gator_workbench/) | The server behind the page: saved tasks, run control, the recorded data, the two classical searches and the local Agent. The [workbench reference](docs/workbench.md) describes every panel. |
+| [src/analog_optimizer/](src/analog_optimizer/) | The optimizer library: the netlist parser, the circuit graph, parameter actions, measurements, the reward, the six encoders (graph transformer, RGCN, GATv2, GraphGPS, CircuitGPS, parameter-group cross-attention), SAC and the simulator backends. See the [optimizer package](docs/optimizer-package.md). |
+| [tests/](tests/) | Offline tests with stand-in simulators and pinned fixtures. |
+| [examples/](examples/) | The scripts of the early milestones, benchmarks and audits, kept as research history and not as tutorials. |
+| [configs/](configs/) | Parser mappings and research configurations; files pinned by an audit stay unchanged. |
+| [docs/](docs/README.md) | The written record: references, plans with their outcomes, and a dated record of every change and experiment, listed in the [index of records](docs/frontend_implementation_status.md). |
+| [.agents/](.agents/), [CLAUDE.md](CLAUDE.md), [the specification](gator_claude_code_fable51_frontend_data_outputs_en.md) | The research contracts, the working rules and the workbench's specification, written for the coding agents that helped build GATOR. |
+| [pyproject.toml](pyproject.toml), [constraints.txt](constraints.txt) | Dependencies, and the exact versions that saved models need. |
 
-[Project decisions](docs/decisions.md) holds the research contracts and their dated changes; the
-[development index](docs/frontend_implementation_status.md) lists every workbench and experiment record.
+Not in the repository: the simulation data, the saved models and the evidence folders that the records cite
+(`artifacts/local/` and `outputs/` are local and git-ignored), the circuits and scripts of the later experiments, any
+PDK or Cadence file, and the thesis. The records show what was done and found; the results cannot be re-run from a
+clone alone.
+
+Read next: the [glossary](docs/glossary.md) for the project's words;
+[how the networks size a circuit](docs/graph-transformers-reading-guide.md), which assumes transistors but not
+transformers; the [functionality reference](docs/functionality-reference.md), which maps each feature to its code,
+tests and record; and [README history](docs/history-readme-milestones.md) for the first README's milestones.
 
 ## Status and limits
 
 - The MScR experiments are complete (3 November 2026). Later changes are maintenance.
+- Every evaluation is a nominal schematic simulation. No saved task simulates at process corners, and there is no
+  Monte Carlo and no layout.
+- A Virtuoso run writes sizes into a working copy of the cell, the copy you made and named, never into your original
+  design.
+- Simulations start only when you press a button; saving a new task simulates its starting design once. The one thing
+  the page does by itself is a free connection test when it opens.
+- The two classical searches are chosen in a configuration file, not on the page, and the Pareto optimiser needs
+  BoTorch (0.16.1 was used), which the commands above do not install.
+- The Agent tab runs an NVIDIA Nemotron model on your own GPU through a pinned llama.cpp build for Windows (WSL
+  included), with 22 GiB of free GPU memory for the large model or 8 for the small one. It only advises: a suggestion
+  goes through the normal editor as one undoable change, and it never starts a simulation.
 - The simulator side was built against one 45 nm generic PDK and one foundry PDK on a Cadence host; the foundry PDK's
   name and files are kept out of this repository.
-- Real simulations, schematic writes and the local Agent's model downloads happen only on an explicit request from
-  the page; nothing starts on its own.
-- The local Agent tab runs an NVIDIA Nemotron model on the user's own GPU through a pinned llama.cpp build. It advises
-  on parameters and run settings; its suggestions are checked and applied through the normal editor as one undoable
-  change, and it never starts a simulation.
-- The workbench, the records and this README were written with the help of coding agents; the project's records say
-  what was done by whom and when.
+- The dated records are kept as they were written: they name folders of the author's machine, some early ones are
+  in Chinese, and the decisions document stops on 15 October 2026 (later decisions are in the records).
+- The workbench, the records and this README were written with the help of coding agents; the records say what was
+  done by whom and when.
 
-## Licence
+## Citing and licence
+
+To cite GATOR, cite this repository: Fengyan Wang, *GATOR: Graph-Aware Transformer Optimizer for Reinforcement
+learning*, 2026, <https://github.com/FengyanWong/gator>. For questions, open an issue there.
 
 GATOR is released under the [MIT licence](LICENSE). The licence covers this repository's code and documents; it
 does not cover Cadence Virtuoso, Spectre, any PDK, the NVIDIA models or the other software it works with, each of
 which has its own terms.
-
-## History
-
-The milestone paragraphs of the first README and its reference sections are preserved unchanged in
-[README history](docs/history-readme-milestones.md), with an English milestone table.

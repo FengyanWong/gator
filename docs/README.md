@@ -45,6 +45,7 @@ Some openings precede later execution sections: follow the plan's later records 
 | [plan-encoder-comparison.md](plan-encoder-comparison.md) | GraphGPS and cross-attention comparisons against GT, including the lean executed matrix. | Plan | Frozen protocol with execution records | 2026-10-07: "plan only; nothing started" is the original status; revision 4 and section 12 record execution. |
 | [plan-finalist-monte-carlo.md](plan-finalist-monte-carlo.md) | A bounded finalist mismatch check and its proposed run-configuration controls. | Plan | Frozen proposal pending a new decision | 2026-09-29: "PLAN. Nothing here is built." |
 | [plan-finetune-vs-scratch.md](plan-finetune-vs-scratch.md) | The twelve own-model fine-tuning and scratch runs from new starting designs, with results. | Plan | Frozen protocol and results | 2026-10-06: "the twelve runs ran ... and are all complete"; results in section 9. |
+| [plan-followup-2026-10-30.md](plan-followup-2026-10-30.md) | The follow-up runs and analyses after thesis revision 25: archive-comparison seeds 1 and 2, anytime metrics, the reverse port, seed-by-seed differences and best-so-far curves, with each part's outcome. | Plan | Frozen plan with recorded outcomes | 2026-10-30: "no run has started" (opening); its table marks Parts A-F done by 2026-11-02 and, of Part G's options, the rehearsal arm done on 2026-11-03. |
 | [plan-frontend-run-workflow-v1.md](plan-frontend-run-workflow-v1.md) | The first draft of the task/model/run workflow, retained for comparison. | Plan | Frozen superseded draft | 2026-10-07: "Superseded" by plan-frontend-run-workflow.md. |
 | [plan-frontend-run-workflow.md](plan-frontend-run-workflow.md) | Task, run and RL-model windows, loading a run and the run brief. | Plan | Frozen design; current behavior is in workbench.md | 2026-10-07: "plan, revised twice ... then extended. Nothing is built yet" is the dated opening status. |
 | [plan-general-network.md](plan-general-network.md) | Training one model from saved experience, matched recipes and held-out circuit comparisons. | Plan | Frozen protocol and results | 2026-10-07 afternoon: "the required experiment ... are complete" (including the follow-ups named there). |
@@ -139,8 +140,18 @@ Existing entries are append-only. The current open file is named in [CLAUDE.md](
 | [7.365-and-later.md](workbench-log/7.365-and-later.md) | Old rollover link, preserved for readers of earlier records; points to `7.365-7.375.md`, `7.376-and-later.md`. | Record | Frozen compatibility pointer |
 | [7.376-7.388.md](workbench-log/7.376-7.388.md) | Chronological workbench entries 7.376-7.388. | Record | Frozen closed record |
 | [7.376-and-later.md](workbench-log/7.376-and-later.md) | Old rollover link, preserved for readers of earlier records; points to `7.376-7.388.md`, `7.389-and-later.md`. | Record | Frozen compatibility pointer |
-| [7.389-and-later.md](workbench-log/7.389-and-later.md) | Workbench entries 7.389 onwards; the open log at this index's creation. | Record | Append-only open record |
+| [7.389-7.400.md](workbench-log/7.389-7.400.md) | Chronological workbench entries 7.389-7.400. | Record | Frozen closed record |
+| [7.389-and-later.md](workbench-log/7.389-and-later.md) | Old rollover link, preserved for readers of earlier records; points to `7.389-7.400.md`, `7.401-and-later.md`. | Record | Frozen compatibility pointer |
+| [7.401-7.416.md](workbench-log/7.401-7.416.md) | Chronological workbench entries 7.401-7.416. | Record | Frozen closed record |
+| [7.401-and-later.md](workbench-log/7.401-and-later.md) | Old rollover link, preserved for readers of earlier records; points to `7.401-7.416.md`, `7.417-and-later.md`. | Record | Frozen compatibility pointer |
 | [7.41-7.60.md](workbench-log/7.41-7.60.md) | Chronological workbench entries 7.41-7.60. | Record | Frozen closed record |
+| [7.417-7.427.md](workbench-log/7.417-7.427.md) | Chronological workbench entries 7.417-7.427. | Record | Frozen closed record |
+| [7.417-and-later.md](workbench-log/7.417-and-later.md) | Old rollover link, preserved for readers of earlier records; points to `7.417-7.427.md`, `7.428-and-later.md`. | Record | Frozen compatibility pointer |
+| [7.428-7.438.md](workbench-log/7.428-7.438.md) | Chronological workbench entries 7.428-7.438. | Record | Frozen closed record |
+| [7.428-and-later.md](workbench-log/7.428-and-later.md) | Old rollover link, preserved for readers of earlier records; points to `7.428-7.438.md`, `7.439-and-later.md`. | Record | Frozen compatibility pointer |
+| [7.439-7.459.md](workbench-log/7.439-7.459.md) | Chronological workbench entries 7.439-7.459. | Record | Frozen closed record |
+| [7.439-and-later.md](workbench-log/7.439-and-later.md) | Old rollover link, preserved for readers of earlier records; points to `7.439-7.459.md`, `7.460-and-later.md`. | Record | Frozen compatibility pointer |
+| [7.460-and-later.md](workbench-log/7.460-and-later.md) | Workbench entries 7.460 onwards; the open log. | Record | Append-only open record |
 | [7.61-7.80.md](workbench-log/7.61-7.80.md) | Chronological workbench entries 7.61-7.80. | Record | Frozen closed record |
 | [7.61-and-later.md](workbench-log/7.61-and-later.md) | Old rollover link, preserved for readers of earlier records; points to `7.61-7.80.md`, `7.81-7.100.md`, `7.101-and-later.md`. | Record | Frozen compatibility pointer |
 | [7.81-7.100.md](workbench-log/7.81-7.100.md) | Chronological workbench entries 7.81-7.100. | Record | Frozen closed record |

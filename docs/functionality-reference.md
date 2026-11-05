@@ -405,7 +405,7 @@ Old configurations that name a removed function still load with their hashes unc
 | [Graph transformer reading guide](graph-transformers-reading-guide.md) | Circuit-to-action walkthrough of Graph Transformer, GraphGPS v1 and CircuitGPS v2; attention, RWSE, measurement trees, residuals, normalization, SAC and pretraining limits, with code and primary-source links (7.343) |
 | `docs/frontend_implementation_status.md` | The index of the development record: one row per entry |
 | `docs/workbench-log/` | The entries themselves (open file: `7.460-and-later.md`), and `record-history.md` (the record's history and the commit table) |
-| `gator_claude_code_fable51_frontend_data_outputs_en.md` | The workbench specification (untracked on purpose) |
+| `gator_claude_code_fable51_frontend_data_outputs_en.md` | The workbench specification (tracked since 6 October 2026) |
 | `CLAUDE.md` | Rules for sessions: digest, evidence pinning, real-simulation authorization, data-only outputs |
 | `.agents/skills/analog-optimizer/` | The research-side rules for M1-M6 (a Codex-style skill; read it as documentation) |
 | `docs/m*-*.md`, `docs/reward-v2.md`, `docs/llm-sizing.md`, `docs/network-presets.md` | Milestone and feature reports |

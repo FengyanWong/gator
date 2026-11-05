@@ -738,3 +738,4 @@ One row per commit, newest last.
 | `8f92004` | 11-04 22:30 | 7.471 | Record 7.471: Codex's lightened workbench made ready to land, with the review's fixes and the full proofs |
 | `189a6e6` | 11-04 23:22 | 7.472 | README for a public reader, with the name explained; the Agent tab easier to read (record 7.472) |
 | `b3e7ca7` | 11-05 02:59 | 7.473 | MIT licence (record 7.473) |
+| `d9188f5` | 11-05 04:59 | 7.474 | Docs: commit ids follow the scrubbed history; the thesis repository named, not linked (record 7.474) |

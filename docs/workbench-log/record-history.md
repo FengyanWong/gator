@@ -744,3 +744,5 @@ One row per commit, newest last.
 | `d9188f5` | 11-05 04:59 | 7.474 | Docs: commit ids follow the scrubbed history; the thesis repository named, not linked (record 7.474) |
 | `8538f6b` | 11-05 05:01 | 7.474 | Record 7.474: the history scrubbed, the ids remapped, a fresh public repository |
 | `869c9d4` | 11-05 07:49 | 7.475 | README revised against a fresh clone; pytest kept below 9.2; the document index complete (record 7.475) |
+| `73b8757` | 11-05 07:55 | 7.475 | Record 7.475: the README revised against a fresh clone; the page closed, scratch folders deleted, the old repository archived |
+| `3eb5376` | 11-05 15:29 | 7.476 | README: the sizing loop as a picture, because GitHub's diagram viewer covered its last box (record 7.476) |

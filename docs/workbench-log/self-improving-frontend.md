@@ -2,8 +2,8 @@
 
 The branch `self-improving-frontend` (2026-10-20, Claude session "Frontend workbench layout design"; user: "keep checking and
 improve the frontend design. Limit is until usage reaches 80% or I command stop", then "branch out and do commit and push
-yourself so I can check. Branch name self improving frontend"). It starts at `origin/workbench` (8b67d97) with records
-7.372, 7.376 and 7.380 cherry-picked (their commits on `workbench`: a481619 and 8d43a00), so nothing of other sessions'
+yourself so I can check. Branch name self improving frontend"). It starts at `origin/workbench` (0d3fd4c) with records
+7.372, 7.376 and 7.380 cherry-picked (their commits on `workbench`: 16170f7 and 463fe1a), so nothing of other sessions'
 unpushed work goes out with it. The session commits and pushes here by itself; whether it is merged is the user's call.
 
 The main log's numbers (7.NNN) are taken within minutes by other sessions, so this branch numbers its own entries SIF-1,
@@ -1650,7 +1650,7 @@ the UTC in its tooltip, its explainer says "27 degC", "125 degC", "-40 degC", an
 degC), `working_copy_check` 31, `task_run_check` 31, `pdk_check` 40 (one new: the Loaded cell's local time and UTC tooltip),
 `training_data_check` 117 - 563 checks, none failed.
 
-**Review follow-up (SIF-59).** The review of bb5107b found the section's claim untrue for one helper: `timeOfDay` (the
+**Review follow-up (SIF-59).** The review of eafe9cd found the section's claim untrue for one helper: `timeOfDay` (the
 Training tab's "last metric ..." and "read ..." times) still used the browser's toLocaleTimeString - "02:03:22 PM" in a
 12-hour browser beside the page's "14:03:22". It now writes hh:mm:ss with stamp()'s getters (an unreadable time gives no
 text, never "Invalid Date"). The log's "the unused CREATED" was wrong: CREATED went with the old createdAt it served. `tsc` clean;
@@ -1701,7 +1701,7 @@ and "Abort this run?" as before; "stopped at N of 20000 evaluations [MOCK]". `ca
 `launch_recovery_check` 20, `save_now_check` 29, `task_run_check` 31, `dom_identity_check` 56, `mode_suggestion_check` 20.
 None flaky.
 
-**Review follow-up.** The review of 47dc930 found three slips, all real. (1) A Start sets the header's "starting" at once
+**Review follow-up.** The review of a41c3a1 found three slips, all real. (1) A Start sets the header's "starting" at once
 (launch.ts), but the header holds the run it held before until the backend answers (`launchedRun` -> `control.take`), so
 for the whole request an ENDED run counted as held: Run configuration said "For the next Start: the run in the header goes
 on ...", the chip read "graphgps_ldo1 · starting" for the new run, and the tab line could offer the ended run. `App.tsx`
@@ -1746,7 +1746,7 @@ by itself, the table its heading and a whole row (40 % of the 361 px card would 
 optimizer searches ? of N rows."). `room_check` 27, `looks_check` 72, `callouts_check` 8, `edit_state_check` 24,
 `reliability_check` 20, `spec_equations_check` 35. None flaky.
 
-**Review follow-up.** The review of 15f2b0a found two slips, both real. (1) The new fact line fixed its noun's number in the
+**Review follow-up.** The review of 60dc55d found two slips, both real. (1) The new fact line fixed its noun's number in the
 text: a Parameters table of one row read "The optimizer searches 1 of 1 rows." (the old "Searched rows: N of M." had no noun
 after the count). `frontend/src/panels/Editors.tsx` now writes `of {plural(rows.length, 'row')}`, as the header's "of N
 evaluations" does; the checks' `of \d+ rows` still hold for their 5 and more rows. (2) `docs/workbench.md` said the box
@@ -1861,7 +1861,7 @@ evaluations, seed 2"; new, its fixture's best design has a reward, and the tile 
 0.125". `looks_check` 74 (73): new, the fixture's time cell reads its local time with "2026-10-03T15:15:01.076735+00:00 (UTC)"
 on hover. `task_run_check` 31, `room_check` 27, `dom_identity_check` 56. None flaky.
 
-**Review follow-up.** The review of 23ae964 found two slips, both real. (1) `frontend/scripts/reward_v2_frontend_check.mjs`
+**Review follow-up.** The review of 4d47855 found two slips, both real. (1) `frontend/scripts/reward_v2_frontend_check.mjs`
 (stand-alone, not run) still looked for "at N evaluations charged" in the First nominal feasibility row, which `firstCost` now
 writes "used": it looks for "used", one as one, as SIF-18 kept its words in step. (2) The rewritten lines built "evaluations"
 by hand, so a baseline whose design is feasible read "First full-plan feasibility: at 1 evaluations used". `firstCost`
@@ -1906,7 +1906,7 @@ passing tile's tooltip says which designs are left out ("Evaluations 189 to 288.
 is cut and the controls stay beside them (the head two lines tall), and the shown run's table row reads "76 of 78 judged (97
 %)". `training_data_check` 117, `dom_identity_check` 56. None flaky.
 
-**Review follow-up.** The review of 6dffc50 found two slips, both real. (1) A read that failed set the read time as a good
+**Review follow-up.** The review of 0656058 found two slips, both real. (1) A read that failed set the read time as a good
 one did, so an ended run whose re-read failed (the tab shown again, or Retry read with the backend down) read "numbers read
 at <the failed read's time>" above "The training numbers could not be read: ...". A failed read now keeps the last good
 read's time (`frontend/src/panels/TrainingTab.tsx`, the shown run's read loop). (2) The counts tooltip always began with
@@ -2023,7 +2023,7 @@ operating-point ratios)" and the Run configuration line's tooltip "inputs Transf
 `network_panel_check` 62, `reward_block_check` 32, `dom_identity_check` 56. `reward_v2_frontend_check` (stand-alone, not run)
 now finds the facts row "Tightest-margin bonus weight". None flaky.
 
-**Review follow-up.** The review of db752c7 found one slip, and it was real. Restorable promised "the run that saved it can
+**Review follow-up.** The review of 55d183b found one slip, and it was real. Restorable promised "the run that saved it can
 be continued exactly" for every full save point. A full save point written by an older optimizer source cannot be continued:
 Continue needs exactly that source (record 7.221; the backend refuses it as `older_code`, and the Runs window's Saved state
 reads "model only"). So the one window could make that promise while its own Compatibility list warned that the source
@@ -2094,7 +2094,7 @@ Spectre jobs" to the right edge of its box and the model line to the right edge 
 `room-1b-narrow-sheet.png`); the page goes back to 1680 x 1050 for what follows. `looks_check` 74 and `module_fold_check` 30.
 None flaky.
 
-**Review follow-up.** The review of acd9fae found one slip, in this entry only, and it was real. "Changed" said that with the
+**Review follow-up.** The review of 5ec41ef found one slip, in this entry only, and it was real. "Changed" said that with the
 circuit shown the column is always narrower than 560 px. At 700 px and under the layout is one column even with the circuit
 shown (`styles.css`, the `@media (max-width: 700px)` rule), the run column takes the page's width, and at 700 px its module
 body is about 637 px, so the cap does take effect there; that is wanted too. The sentence now names the two-column range
@@ -2131,7 +2131,7 @@ says the run ends cancelled instead of stopped and names no Pause. Pause on a ru
 it." tail. The fixture's pausing phase is one status poll longer, so the extra question fits in it. `save_now_check` 29.
 None flaky.
 
-**Review follow-up.** The review of 175f392 found two slips, both real. (1) Force abort's new words said something false for
+**Review follow-up.** The review of 555232b found two slips, both real. (1) Force abort's new words said something false for
 the very run this record is about. On a Bayesian run the user answers Pause's "This run cannot be resumed after a pause", and
 seconds later Force abort said "To keep it resumable, wait for the pause", and its tooltip implied the run could otherwise be
 resumed; after an Abort, "so Continue... can no longer pick it up" implied a stopped Bayesian or checkpoint-less run could be
@@ -2260,7 +2260,7 @@ the notice's link opens the window at the soft actor-critic warning (scrolled 55
 `model_structure_check` 30, `mode_suggestion_check` 20, `network_inputs_check` 9, `dom_identity_check` 56, `pdk_check`
 40, `reliability_check` 20, `room_check` 28, `task_rows_check` 54, `typing_check` 50. No flakes.
 
-**Review follow-up.** The review of 82a439d found one slip, and it was real. The rule that makes the Details' own table
+**Review follow-up.** The review of 176ec23 found one slip, and it was real. The rule that makes the Details' own table
 titles static, `.rl-networks-window .saved-models .model-details table.grid th`, also matched the Network structure's
 "Full layer table". Its `<dialog>` is rendered inside `.model-details`, and the long `table.structure-layers` scrolls in the
 dialog's own box (`.structure-scroll`). Its column titles (#, Section, Layer, ... What it does) had stayed at that box's top
@@ -2349,7 +2349,7 @@ the removed netlist source titles "no task chosen", RL model "not set", and show
 `task_list_check` 89: with no task, the title reads "no task chosen". `testbench_probes_check` 41, `looks_check` 74,
 `typing_check` 50, `editor_columns_check` 23. No flakes.
 
-**Review follow-up.** The review of 3ffc72e found two slips, both real. (1) The draft's `p.tb-stale` line still said
+**Review follow-up.** The review of 01a1117 found two slips, both real. (1) The draft's `p.tb-stale` line still said
 "Press Read the cell again to read it without one" whenever Testbench cell was empty. On a cell read before the question
 (no verified working-copy record), that press declares the cell, and `importCell` now refuses it with `NO_TESTBENCH`: the
 line invited the press that the next line refused. `working_copy_check` makes exactly this state. For such a cell the line
@@ -2403,7 +2403,7 @@ row that comes right after the run at a glance and before the facts. `looks_chec
 `calibration_check` 38, `calibration_save_check` 22, `run_list_check` 129, `save_now_check` 29,
 `launch_recovery_check` 20. No flakes.
 
-**Review follow-up.** The review of 9961caa found one slip, and it is real. The red connection-failure line did not
+**Review follow-up.** The review of 70426de found one slip, and it is real. The red connection-failure line did not
 check that the run's state was `paused`. After the failures, the engine sets the stop reason and its error, then keeps
 writing `running` while it drains the jobs in flight, cleans up over the dead link and saves. If the worker dies in that
 window, `run_status` turns the run into `interrupted` and keeps the stop reason. The page then said "everything is
@@ -2495,7 +2495,7 @@ and an emptied one is new again. `room_check` 29: "Of the run shown: run", the p
 the header's run works with a paused run shown; they unlock once it is paused. `module_fold_check` 30, `looks_check`
 74, `export_check` 31. No flakes.
 
-**Review follow-up.** The review of 1d7cb67 found two slips, both real. (1) Experiment ID's list offered every
+**Review follow-up.** The review of e784774 found two slips, both real. (1) Experiment ID's list offered every
 experiment under the root, MOCK ones included, whatever kind of task was loaded, and the hint looked only at whether the
 name was listed. Start looks for a MOCK task's experiment under `<root>/mock` and a real task's under the root itself
 (`runs.py`, `paths.py` `data_root`; `layout.py` raises `FileNotFoundError`), so an experiment of the other kind, picked
@@ -2581,7 +2581,7 @@ the editors, the line gone). The waiting parts stay named, every question of the
 them and takes the toolbar line away. `virtuoso_source_check` 104, `project_help_check` 50, `working_copy_check` 34,
 `calibration_save_check` 22, `unsaved_rows_check` 25. No flakes.
 
-**Review follow-up.** The review of 2331c35 found two slips, both real. (1) A draft kept from a closed window (SIF-87)
+**Review follow-up.** The review of 4e4f853 found two slips, both real. (1) A draft kept from a closed window (SIF-87)
 lies over a later reading, so the rows of that reading were compared with the editors. An edit made in the editors while
 the window was closed went unsaid, and the first Apply put the draft's older rows back. `frontend/src/panels/TaskSave.tsx`
 now keeps `keptRows`, the rows the draft was typed over, taken when it is first kept. While such a draft is in the box the
@@ -2635,7 +2635,7 @@ the refusal note with the path. `looks_check` 75 (74 before): "Copied <column>."
 `graph_view_check` 69, `module_fold_check` 30, `reward_block_check` 33, `pdk_check` 40, `model_structure_check` 31,
 `agent_window_check` 29, `network_inputs_check` 9 (26 scripts, 1,387 checks, one lane). No flakes.
 
-**Review follow-up.** The review of 140ce51 found two slips, both real. (1) In Output files, "Packing..." is the only busy
+**Review follow-up.** The review of 301acfb found two slips, both real. (1) In Output files, "Packing..." is the only busy
 state of **Download data-only package**: it disables the button and shows the hourglass. Copy run path's new note
 replaced it, so a copy while a package was still zipping freed the button for a second pack, and the first one's
 "Downloaded <name>." later replaced the copy's note. `frontend/src/panels/RunTabs.tsx`: the copy's notes now leave
@@ -2685,7 +2685,7 @@ Where goes back to its row's Lower. The new checks fail on the code before the c
 `unsaved_rows_check` 25, `editor_columns_check` 23, `formula_bar_check` 21, `matched_devices_check` 37 (10 scripts, 395
 checks, one lane). No flakes.
 
-**Review follow-up.** The review of 719e3c5 found three slips, all real. (1) A tab's tooltip promised "its Where goes to
+**Review follow-up.** The review of 1b1ab28 found three slips, all real. (1) A tab's tooltip promised "its Where goes to
 the row" for every blocking issue it counted, but the tab also counts the table's own issues: `nothing_to_optimize`,
 `binding_graph`, `multiple_preferences`, `no_hard_constraint` and `task_not_saved` sit on the bare path "parameters" or
 "targets". Their Where is text, and so is the Where of a row with an empty ID. An empty Parameters table read "1 blocking
@@ -2816,7 +2816,7 @@ unchanged: `formula_bar_check` 21, `task_rows_check` 54, `typing_check` 50, `mod
 `network_inputs_check` 9, `reward_block_check` 33, `circuit_source_check` 17, `testbench_probes_check` 41, `room_check` 30,
 `dom_identity_check` 56 (23 scripts, 917 checks, one lane). No flakes.
 
-**Review follow-up.** The review of f90ff24 found one slip, real. The RL model window's keys were a React `onKeyDown` on
+**Review follow-up.** The review of 32cb63d found one slip, real. The RL model window's keys were a React `onKeyDown` on
 its section, which `PopupPortal` draws inside a root element in the pop-up's body. A press with the focus on the window's
 page itself has the body as its target and never reaches the section: just after the window opens, after a click on
 blank space, and after Use template or Use the template's values, whose pressed button goes away with the press (it
@@ -2963,7 +2963,7 @@ not have. Also run, unchanged: `task_rows_check` 54, `task_run_check` 39, `ngspi
 `circuit_source_check` 17, `testbench_probes_check` 41, `dom_identity_check` 56 (8 scripts, one lane, all passed the
 first time), `project_help_check` 50. Not run: `consistency_check` (it presses Start against its fixture). No flakes.
 
-**Review follow-up.** The review of baaf1e4 found one slip, real. After deleting the task the page followed, the answer
+**Review follow-up.** The review of b6eab57 found one slip, real. After deleting the task the page followed, the answer
 said "The page now follows its cell <library>/<cell>." and only a change of `ref.task_id` could clear it. Choosing
 another library or cell in the Virtuoso window changes only `circuit.library` and `circuit.cell`; `task_id` stays null.
 So the Tasks window kept saying the page followed the deleted task's cell after the page had moved to another cell
@@ -3028,7 +3028,7 @@ had no Back or Go-to link, opened at the top of the list, and opened "Later". Al
 scripts, one lane, all passed the first time). Not run: `run_control_check` (it presses Start against its fixture). No
 flakes.
 
-**Review follow-up.** The review of 2b61257 found two slips, both real. First, the Runs window never passed its tick
+**Review follow-up.** The review of 71a850a found two slips, both real. First, the Runs window never passed its tick
 count to `Folders` (the plan's J6-8 named TaskList, RunList and SavedModels; only TaskList and ModelChooser were changed),
 so there New folder with runs ticked still opened the new, empty folder and let the ticks go, while this entry and the
 Task folders row of `docs/functionality-reference.md` said all three windows kept them. `RunList.tsx` now passes
@@ -3094,7 +3094,7 @@ check looks for what the code before did not do. Also run, unchanged: `network_p
 `graph_view_check` 69, `encoder_models_check` 24, `model_structure_check` 31, `mode_suggestion_check` 20 (7 scripts,
 one lane, all passed the first time). No flakes.
 
-**Review follow-up.** The review of d099dfd found one slip, real. A rename could leave the saved models not read again
+**Review follow-up.** The review of 8cb54dd found one slip, real. A rename could leave the saved models not read again
 at all, although the comment said "once either way". The page's run list may already hold the new name: the run was
 renamed in another tab, or by a direct `POST /api/runs/model/rename`, and seen here only by the window's read, then renamed
 back here. The run list read after the rename is then the same as the one held, so `useRunList` keeps that array and
@@ -3161,7 +3161,7 @@ did not do. Also run, unchanged: `looks_check` 75, `network_panel_check` 72, `re
 `mode_suggestion_check` 20, `encoder_models_check` 24, `room_check` 30, `graph_view_check` 69, `model_structure_check`
 31, `network_inputs_check` 9 (10 scripts, one lane, all passed the first time). No flakes.
 
-**Review follow-up.** The review of 9d820b9 found two slips, both real. First, the switches were said at the end of two
+**Review follow-up.** The review of 20c3147 found two slips, both real. First, the switches were said at the end of two
 lines that are cut at two lines, so in real use they were hidden. A saved model's name and save point fill the model line
 (about 200 px wide; "Fine-tune mscr_vco_lin_c (6) · / save point 800 evaluations" at 1366 px), and the task's and the
 model's names fill the header's Next line (200 px at most). In this check's own fixture at 1,680 px, with three switches
@@ -3195,14 +3195,14 @@ the line and the word go. Against the code before, there is no such line and Eva
 
 ### Merged into workbench and live (2026-10-22; the user: "merge it into workbench and make it live")
 
-**Merge.** workbench (48 commits by other sessions since 8b67d97: frontend speed-ups and checks of 7.377/7.379, backend,
+**Merge.** workbench (48 commits by other sessions since 0d3fd4c: frontend speed-ups and checks of 7.377/7.379, backend,
 docs, thesis) was merged into this branch in its own worktree: 16 files conflicted (41 hunks), each resolved keeping both
 sides (their features and checks, our wording, names, layout and check expectations); the backend and tests are byte-identical
 to workbench's. docs/frontend_implementation_status.md keeps workbench's version for now: another session has unsaved edits
-in it, and this log's pointer row waits. Merge commit fcc80ed; circuit_layout_check and editor_renames_check (theirs) refused
-the runner's evidence-folder argument - fixed in 8aa7213. On the merged tree: `tsc` clean; vite build; full browser suite at
+in it, and this log's pointer row waits. Merge commit de6d761; circuit_layout_check and editor_renames_check (theirs) refused
+the runner's evidence-folder argument - fixed in b1e4a4b. On the merged tree: `tsc` clean; vite build; full browser suite at
 one lane - 58 scripts, 2,680 checks passed; an adversarial review of the resolution found nothing lost. workbench was then
-fast-forwarded to 8aa7213 in the shared tree (none of the 116 files it changed had anyone's unsaved edits; theirs stayed as
+fast-forwarded to b1e4a4b in the shared tree (none of the 116 files it changed had anyone's unsaved edits; theirs stayed as
 they were). workbench is not pushed (166 commits ahead of origin, most of them other sessions').
 
 **Live.** Page: the merged build (index-Pf1CbBhz.js, index-CeHnC5t3.css) copied into frontend/dist/assets beside the old
@@ -3268,7 +3268,7 @@ line now. New picture: `help-4c-draft-size-added.png`. Also run, unchanged: `vir
 `working_copy_check` 34, `reliability_check` 20, `circuit_source_check` 17, `editor_columns_check` 23 (Add's Probe and
 Spec), `edit_state_check` 28 (11 scripts, 465 checks, one lane, all passed). No flakes.
 
-**Review follow-up.** The review of 3a5289e found two slips, both real. First, the press stored the present size as the
+**Review follow-up.** The review of 41c537a found two slips, both real. First, the press stored the present size as the
 row's `initial_value`, which no row made in the page had carried: Add leaves it empty, meaning the value the circuit has,
 and Save task empties it. Nobody can see or type it (a hidden column, `schema.py` HIDDEN_COLUMNS), yet validation compares
 a stated one with the circuit (`initial_differs_from_circuit`); `withFollowers` changes only a row's unit when its
@@ -3353,7 +3353,7 @@ tab and choices that reset. Also run, unchanged: `calibration_save_check` 22 (th
 `reliability_check` 20, `matched_devices_check` 37, `request_lifecycle_check` 25 (13 scripts, 695 checks, one lane, all
 passed the first time). No flakes.
 
-**Review follow-up.** The review of 08e822d found one slip, real: the Compare select's tooltip always ended "the shown
+**Review follow-up.** The review of caa2289 found one slip, real: the Compare select's tooltip always ended "the shown
 run's task first", but a shown run the run list names no task for keeps the one list, with nothing put first - a run the
 list does not hold (outside the listed output folder, or before the list is read) or a row without a `task_key`
 (`run_index.py` takes it from the manifest's `circuit.task_key`). `frontend/src/panels/TrainingTab.tsx` now adds the
@@ -3425,7 +3425,7 @@ check itself: a name declared twice, then the backend refusing the whole configu
 once the check's last part plans training corners for the MOCK task, so no row issue could show. The section now runs
 before that part. No flakes.
 
-**Review follow-up.** The review of fa054e6 found four slips, all real. First, Enter in the formula bar wrote a Probe ID and
+**Review follow-up.** The review of 23aeaa0 found four slips, all real. First, Enter in the formula bar wrote a Probe ID and
 went back to its cell inside the same key press, before React drew the write (react-dom 18 runs the nested focus event
 inside the key press's batch, without a render), so the cell was entered with its row as it was before: it held the ID the
 bar had replaced. A slip written in the bar (m_totl, the Specs taken along) and fixed in that cell (m_total, Tab) then took
@@ -3519,7 +3519,7 @@ for what the code before did not have. Also run, unchanged: `task_rows_check` 54
 again once the box took `tabIndex`, `typing_check` once more with its tab press). Not run, by the rules:
 `reward_v21_check`, which pins the hint's words; they are unchanged. No flakes.
 
-**Review follow-up.** The review of b602d87 found one slip; it is real. Apply's line took "Imported: nothing changed." from
+**Review follow-up.** The review of 0c18959 found one slip; it is real. Apply's line took "Imported: nothing changed." from
 the diff the backend sent when the file was read. That diff matches rows by ID (`structured_diff`), so it ignores row
 order and any edit made after the box opened, while history.ts makes Apply an Undo step whenever the configuration's JSON
 changes. The same rows in another order came in as "0 changed rows" and "No differences."; Apply put the table in the
@@ -3708,7 +3708,7 @@ checks, one lane, all passed the first time). `run_list_check`'s new checks were
 1200 x 700 came back as the headless screen's 800 x 600, at the corner (0, 0) -, and one run of it stopped at the check's
 own fault (an emulated window position needs an emulated screen around it); with one it passed, 167. No flakes.
 
-**Review follow-up.** The review of 1c3b584 found one slip; it is real. The size kept was the page's, innerWidth x
+**Review follow-up.** The review of 5cd7330 found one slip; it is real. The size kept was the page's, innerWidth x
 innerHeight, in its CSS px, which shrink as the window's page zoom grows (innerWidth = the page's width / zoom), while
 window.open's `width` and `height` are screen px, as are `left` and `top`, screenX and screenY and the screen's sizes,
 which zoom leaves alone. At a page zoom of 125 % - Edge's default page zoom set so, or Ctrl + in the pop-up - each opening
@@ -3773,8 +3773,8 @@ new help in its file; older files keep theirs, which the page reads but never ap
 the server on 8765.
 
 **Checked.** `tests/workbench/test_wb_task_save.py`, `test_wb_readiness.py`, `test_wb_agent_cli.py`: 39 passed (no
-test pins these words; `task_save_check` serves its own help text). Made on a side branch (sif-help-text, 43f4960 and
-00b9b42) while the usability run held this worktree, then cherry-picked.
+test pins these words; `task_save_check` serves its own help text). Made on a side branch (sif-help-text, b03966d and
+e757bc4) while the usability run held this worktree, then cherry-picked.
 
 ### SIF-112 The blocking-issues list and the calibration line close with an X (2026-10-23; from the icon audit)
 
@@ -3873,7 +3873,7 @@ passed the first time); and every other check that opens the Tasks, Runs, RL mod
 stopped after 23 checks in that batch - "the DevTools session closed (its window went away)", in the RL model window's
 network settings after "Use the template's values", away from the saved models - and passed alone at once (33).
 
-**Review follow-up.** The review of 6f8fe39 found one slip; it is real. `virtuoso_source_check`'s new check of Delete
+**Review follow-up.** The review of 34c9be6 found one slip; it is real. `virtuoso_source_check`'s new check of Delete
 task while its delete is on its way named the hourglass but asked only for another drawing than the bin, and the tray of
 the code before, which stood still until the answer came, is another drawing too: the check passed on the code it was to
 tell apart, so what is said above - each new check looks for what the code before did not have, "a drawing that stood
@@ -3982,7 +3982,7 @@ all passed the first time; `corner_check_check` alone, also the first time: the 
 script (`run_checks.mjs` adds `_check` only to a name that does not end in it), so it is called by its whole name. No
 flakes.
 
-**Review follow-up.** The review of 95a9d69 found three slips, all real, in words only: the code is right. (1) "Changed"
+**Review follow-up.** The review of dfa7810 found three slips, all real, in words only: the code is right. (1) "Changed"
 said Load task drew `load` until record 7.146 made that button "Reload saved values", in words. Record 7.146 (d8b8c4f)
 renamed it and kept it an icon, `<Icon name="load" label="Reload saved values" />`; record 7.260 (6fa7d6b, 2026-10-07)
 removed the button, as `docs/workbench.md` says ("The separate Load task / Reload saved values icon was removed in
@@ -4144,7 +4144,7 @@ closed"); on the code after, `run_list_check`, `reward_block_check`, `model_choo
 passed again together (170, 34, 122, 33). `training_tab_check` and `run_control_live_check` were left out of the probe:
 their changed pins wait a minute each for "20,000", which the code before never writes. No flakes on the code after.
 
-**Review follow-up.** The review of 0b49f9c found one slip; it is real. Three counts of the run at a glance in Run
+**Review follow-up.** The review of 1ca03d2 found one slip; it is real. Three counts of the run at a glance in Run
 status, the total after "/", those in flight and those failed, were bare values, which React draws as nothing when the
 status does not give one, and are `count(...)` now, which writes what is not a number as `String()` does: the word
 "undefined". An offline-trained model's status gives its budget as the evaluations used and the launches alone
@@ -4163,7 +4163,7 @@ stops a run. `tsc` clean. `run_control_check` 171 (170): its live MOCK fixture r
 moment (`sim.budget`), and the run at a glance reads "0 / ?" and "evaluations used · ? in flight · ? failed". Also run,
 unchanged: `export_check` 37, `run_list_check` 170, `room_check` 31, `looks_check` 76, `save_now_check` 29,
 `calibration_check` 48 (seven scripts, one lane, after the memory guard), all passed the first time. A probe run on the
-code before (`RunTabs.tsx` as at 0b49f9c, restored after, its sum compared) failed the new check alone (170 passed): "0
+code before (`RunTabs.tsx` as at 1ca03d2, restored after, its sum compared) failed the new check alone (170 passed): "0
 / undefined | evaluations used · undefined in flight · undefined failed". No flakes.
 
 ### SIF-118 A note many rows share is said once, above the table (2026-10-24; from the survey of 2026-10-23)
@@ -4332,7 +4332,7 @@ were measured with temporary scripts, not kept (one of them, a copy of `training
 one chart within a second at its start, six in all, as every run of the check counts). After comments in `roadster.css`
 and the check changed, `tsc` clean and `training_tab_check` 120 again.
 
-**Review follow-up.** The review of 9203cb5 found two slips; both are real. (1) A chart could run out of its card onto
+**Review follow-up.** The review of 98728af found two slips; both are real. (1) A chart could run out of its card onto
 the chart below. A row's least height was a fixed 170 px (`grid-auto-rows: minmax(170px, 1fr)`, `styles.css`), so what a
 chart holds never made its row taller; with the legend keeping all its lines (`flex: none`) and the plot stopping at 60
 px, a legend taller than the card's room pushed the plot past the card's foot - "ends 6 px below its box" in "Changed"
@@ -4357,7 +4357,7 @@ blank, the plot 103); shown again, two lines. `docs/workbench.md` (The Training 
 `docs/functionality-reference.md` say both. Nothing here starts, continues or stops a run, saves a task or writes to
 Virtuoso. `tsc` clean. `training_tab_check` 123 (120): new, at 1366 px the key off and on again, and the eight charts
 with a compared run; SIF-120's eight-chart check also asks that each plot end inside its card. A probe run on the code
-before (`TrainingChart.tsx` and `roadster.css` as at 9203cb5, restored after, their sums compared) failed the two new
+before (`TrainingChart.tsx` and `roadster.css` as at 98728af, restored after, their sums compared) failed the two new
 checks of the slips (121 passed); the key on again and the eight charts at 1600 px pass there too. One lane, after the
 memory guard: `training_tab_check` 123, `dom_identity_check` 56, `files_tab_check` 43, `corner_check_check` 40,
 `looks_check` 76, `training_data_check` 120, in one run, all passed the first time; no flakes.
@@ -4458,7 +4458,7 @@ the page's first layouts decides it. With the same height the tabs scenes of the
 (two such pairs).
 
 **Measured.** A throwaway check (`tmp-measure-runs_check.mjs`, deleted before this commit) run by `run_checks.sh --lanes 1
---build <dist>` on both builds (HEAD 1390ba6 and this change, each built into a temp folder) behind the scratch backend:
+--build <dist>` on both builds (HEAD a99ec26 and this change, each built into a temp folder) behind the scratch backend:
 `/api/runs` answered with 549 canned runs shaped like the user's (seven tasks, five designs, fine-tunes of earlier runs,
 baselines and calibrations, every state at rest), `/api/runs/status` for each, `/api/run-folders` empty. Headless Edge,
 the Runs window 1500 x 860, no run shown. After a warm-up (four ticks, two Details presses) and a garbage collection, CDP
@@ -4526,7 +4526,7 @@ into the folders SIF-122's proof had used, also compared three files of their ta
 proof (the uPlot height its record explains), so it was made again into fresh folders.
 
 **Measured.** A throwaway check (`tmp-measure-models_check.mjs`, deleted before this commit) run by `run_checks.sh
---lanes 1 --build <dist>` on both builds (HEAD 507e20a and this change, each built into a temp folder) behind the scratch
+--lanes 1 --build <dist>` on both builds (HEAD d0a4f40 and this change, each built into a temp folder) behind the scratch
 backend: `/api/runs/models` answered with 411 canned saved models shaped like the user's (seven tasks, five designs, 1 to
 10 save points, about a third fine-tuned from an older one), `/api/runs` with their runs, `/api/runs/model` for each.
 Headless Edge, the RL model window 1180 x 920 in Fine-tune with a model in use, no Details open. After a warm-up and a
@@ -4551,9 +4551,9 @@ models table anew - so do New model -> Fine-tune and each opening of New model's
 audit found it empty, "Reading the saved models..." and no row, for as long as `GET /api/runs/models` took: about 1 to 2 s
 with the user's 411 saved models and 549 run folders on D: (about 1 MB of JSON), even when nothing had changed since the
 last opening. Its plan: keep the last list at module level, keyed by the output folder and the run list's key, and show
-it while the one read per opening goes. The audit read `ModelChooser.tsx` as it was at 0e8d941 (the review of SIF-80,
+it while the one read per opening goes. The audit read `ModelChooser.tsx` as it was at 5a2535e (the review of SIF-80,
 2026-10-22 00:13): its line numbers - the read at 156 to 159, the folders at 161, the list at 167, the notes at 194 to
-199 - are that file's. SIF-102 (d099dfd and its review follow-up c91693d, the same morning) had done it already:
+199 - are that file's. SIF-102 (8cb54dd and its review follow-up 58554a4, the same morning) had done it already:
 `useSavedModelsView` keeps the last list read, with the output folder it was read for, in `useRlModel`, and both of the
 window's saved models tables take that view (`view={m.savedView}` in `RlModelWindow.tsx`: Fine-tune and Evaluate only,
 and New model's fold). So each of those mounts shows the rows of the last read under the same output folder at once, and
@@ -4576,14 +4576,14 @@ the view kept, the rows of the last read shown while it is read again) and `docs
 models) say it since SIF-102; this record is the only file changed.
 
 **Checked.** `tsc` clean. `model_chooser_check` 139, five runs (the batch asked for five, to watch the two read counts
-that kept rows could race), one lane, after the memory guard, on a build of HEAD 3311a27: all passed, each with "opening
+that kept rows could race), one lane, after the memory guard, on a build of HEAD 9fa95e8: all passed, each with "opening
 it reads the list once", "Fine-tune reads the list once", "... its rows are those of the last read, shown at once, while
 its one read is still on its way", "... and when it answers, the view stays, with no second read", "the list is not
 re-read on a timer" and "Refresh list reads the list exactly once". No code changed, so no other check was run. No
 flakes.
 
 **Measured.** A throwaway check (`tmp-measure-reopen_check.mjs`) and build script (`tmp-measure-build.mjs`), both deleted
-before this commit, run by `run_checks.sh --lanes 1 --build <dist>` on two builds of HEAD 3311a27, each built into a temp
+before this commit, run by `run_checks.sh --lanes 1 --build <dist>` on two builds of HEAD 9fa95e8, each built into a temp
 folder: as it is, and with SIF-102's kept rows switched off by a transform at build time (`read?.models ?? null`: no row
 until the window's own read answers, the window as the audit saw it; the source untouched). Behind the scratch backend:
 `/api/runs/models` answered with 411 canned saved models shaped like the user's (seven tasks, five designs, 1 to 10 save
@@ -4610,7 +4610,7 @@ not - and with it its Compare list, made anew from the run list (an option per r
 each chart's list of choices, once per chart. Each status answer of a live run (every 1.5 s) did the same. And each 2 s
 read of a live run drew the tab twice: as the read started, for a "busy" mark that nothing showed, and again as its
 answer came. Measured below with 549 runs: about 0.4 ms of script per key went to the tab, shown or hidden, and a minute
-of a live run took 68 ms of script where 41 do now. The audit read `TrainingTab.tsx` as it was at d19e4ad (the review of
+of a live run took 68 ms of script where 41 do now. The audit read `TrainingTab.tsx` as it was at 717f202 (the review of
 SIF-77, 2026-10-21 23:27): its line numbers are that file's, and its Compare list the one list before SIF-105 grouped it.
 
 **Changed.** `frontend/src/panels/TrainingTab.tsx`: the tab's body is `TrainingTabBody`, and `TrainingTab` is it
@@ -4652,7 +4652,7 @@ backend (56 passed), replayed on the build before (the reference, 56 passed) and
 storage.json - among them the tabs scene's Training tab with a compared run.
 
 **Measured.** A throwaway check (`tmp-measure-training_check.mjs`) and build script (`tmp-measure-build.mjs`), both
-deleted before this commit, run by `run_checks.sh --lanes 1 --build <dist>` on builds of HEAD 39e8e30 and of this
+deleted before this commit, run by `run_checks.sh --lanes 1 --build <dist>` on builds of HEAD 45c1695 and of this
 change, each built into a temp folder, behind the scratch backend: `/api/runs` answered with 549 canned runs shaped like
 the user's (SIF-122's: seven tasks, five designs, fine-tunes, baselines and calibrations), the shown one - the newest - a
 MOCK run of 400 evaluations and 2512 learner updates whose `/api/runs/status` and `/api/runs/training` are canned as
@@ -4691,7 +4691,7 @@ first chart waited for the second read, slowed by the first. Measured below with
 evaluations: two reads from cursor 0 at every such choice, both served by the backend, and the first chart 402 ms after
 Show results, where one read alone took 150 to 194 ms. A run at rest was read once, and is. The audit's line numbers are
 those of the file before SIF-125 (the read at 189, its dependencies at 195, the run list's rows at 214: 198, 203 and 222
-at d6bd2ce).
+at 7961a5b).
 
 **Changed.** `frontend/src/panels/TrainingTab.tsx`: a run that the run list calls live (its row's state one of
 `LIVE_STATES`, `runState.ts`) is first read once its status is in. The shown run's read starts when `ready` - this run's
@@ -4734,7 +4734,7 @@ page's first layouts decides it). The tabs scene alone, three more times on each
 pair of the two builds was identical byte for byte (nine files each).
 
 **Measured.** A throwaway script (`tmp-measure-livepick.mjs`) and build script (`tmp-measure-build.mjs`), both deleted
-before this commit, on builds of HEAD d6bd2ce and of this change, each into a temp folder (HEAD's: the two files changed
+before this commit, on builds of HEAD 7961a5b and of this change, each into a temp folder (HEAD's: the two files changed
 built from their `git show` text by a load hook, the rest of the tree as it is). Behind a scratch backend started as
 run_checks.sh starts one (its own settings and output folder on the WSL disk, the MOCK stand-in registered), a preview of
 the build served by the script with /api proxied to it; headless Edge 1600 x 1000. In each run: a MOCK run of 24
@@ -4765,9 +4765,9 @@ bottom panel was folded to its tab line and none of it could be seen; and the pa
 entered with little room (record 7.372), so the reads went on while the user typed. The Training tab reads nothing while
 folded (record 7.193); Logs was given only the run and whether its worker lives. Measured below with a live MOCK run: 29
 reads in the minute after a fold, of about 64 kB each - 29 of the page's 68 and 69 requests in that minute, where the
-audit had put it at up to 40 % of the live traffic. The audit's line numbers are those of the tree at 0e8d941 (the
+audit had put it at up to 40 % of the live traffic. The audit's line numbers are those of the tree at 5a2535e (the
 review of SIF-80, 2026-10-22 00:13), as SIF-124 found for its file: the read at `RunTabs.tsx` 316 and the tab at
-`BottomPanel.tsx` 110 stood at 448 and 132 at HEAD 4927786.
+`BottomPanel.tsx` 110 stood at 448 and 132 at HEAD 19960cb.
 
 **Changed.** `frontend/src/panels/BottomPanel.tsx`: `bodyHidden`, whether the fold puts the tab out of sight - folded,
 in a window 1101 px or wider (`window.matchMedia('(min-width: 1101px)')`, the media query of the fold's rule in
@@ -4808,7 +4808,7 @@ scenes, requests.txt and storage.json - among them the tabs scene's Logs step, w
 both (no scene folds the panel).
 
 **Measured.** A throwaway check (`tmp-measure-logs_check.mjs`) and its wrapper script in the session's scratchpad, both
-deleted before this commit, on builds of HEAD 4927786 and of this change, each built into a temp folder. The wrapper
+deleted before this commit, on builds of HEAD 19960cb and of this change, each built into a temp folder. The wrapper
 started a scratch backend as run_checks.sh starts one (its own settings and output folder, the MOCK stand-in registered,
 never 8765); the check served the build with vite preview, /api proxied to that backend, started a MOCK run of 20,000
 evaluations at concurrency 1 through the API (as export_check does) and stopped it at the end. Headless Edge
@@ -4840,7 +4840,7 @@ model's `tb-model` too). No .ts or .tsx file draws these classes or builds them 
 comments (`taskActions.ts`, `shared.ts`), the other three names nowhere outside the stylesheet. They told a reader of the
 stylesheet of a subtitle, a switch and a grid that are not there, and each pop-up window, which copies the page's
 stylesheet as it opens (`popupWindow.ts`), read them again. The audit's lines 272-276, 433-435 and 440 stood at 276-280,
-444-446 and 451 at HEAD 9386d1d (rules added above them since).
+444-446 and 451 at HEAD e0d6f6d (rules added above them since).
 
 **Changed.** `frontend/src/styles.css`: the nine rules and the launchers' comment deleted (9 lines, 24 declarations).
 `.tb-brand`, `.tb-facts`, `.tb-cell`, `.tb-k` and `.tb-v` stay: the title block draws them (`App.tsx`, `Left.tsx`;
@@ -4869,7 +4869,7 @@ expected, it fails - it proves a regrouping, not a removal - and names as only i
 declarations of the nine rules (old lines 278-280, 444-446 and 451), nothing else lost, added or moved (1,759 atoms in
 the old source, 2,470 in the old bundle).
 
-**Measured.** `npx vite build` into a temp folder (the batch's measure), on HEAD 9386d1d and on this change: the
+**Measured.** `npx vite build` into a temp folder (the batch's measure), on HEAD e0d6f6d and on this change: the
 stylesheet `index-*.css` 68.84 kB (gzip 14.97 kB) -> 68.23 kB (gzip 14.84 kB), as Vite reports it; 68,848 -> 68,233
 bytes, 615 fewer (0.9 %); with gzip -9, 14,847 -> 14,709. The source `styles.css` 71,550 -> 70,612 bytes (604 -> 595
 lines). The batch expected about 1 kB off 65.17 kB (gzip 14.27 kB): records since the audit added rules, and the build
@@ -4893,10 +4893,10 @@ round the page (`@media (min-width: 1101px) { .layout { padding: 19px } }`, whic
 12px 16px }`, written at top level, beats at every width). None of them ever applied: an edit of one changed nothing on
 the page or in a window, and each window read them again as it opened. The audit counted 118 such declarations and 2 more,
 `table.editor th.sel, table.editor td.sel { padding: 0 3px; text-align: center }`, overridden for td.sel only; its line
-numbers fit `styles.css` at acd9fae (branch record SIF-82, 2026-10-22). The batch's scan (a throwaway script, deleted
+numbers fit `styles.css` at 5ec41ef (branch record SIF-82, 2026-10-22). The batch's scan (a throwaway script, deleted
 before this commit: each `styles.css` declaration, its selector list split, paired with the `roadster.css` atoms of the
 same normalised selector and property, at top level or in the same @media chain; counted when every selector of the list
-has one whose value this browser takes, never an !important one) gives exactly 118 and 2 on that tree. On HEAD 76ff39c it
+has one whose value this browser takes, never an !important one) gives exactly 118 and 2 on that tree. On HEAD ac4c4bb it
 gives 127 and none partial: the 118, each still there and still overridden, between 1 line above and 6 below the audit's,
 and 9 values that later records overrode in `roadster.css` instead of changing them here - the "copied" word's size (SIF-94),
 the blocking list head's alignment (SIF-112), Tied to's width (SIF-119), and the Training charts' row and chart heights,
@@ -4961,7 +4961,7 @@ only in the old one exactly `@media (min-width: 1101px) .layout { padding: 19px 
 atoms; 150 atoms that a later atom of the same selector overrides dropped from the old side first, 20 from the new); the
 same on the source texts of the two stylesheets one after the other (2,370 atoms; 147 and 15).
 
-**Measured.** `npx vite build` into a temp folder (the batch's measure), on HEAD 76ff39c and on this change: the
+**Measured.** `npx vite build` into a temp folder (the batch's measure), on HEAD ac4c4bb and on this change: the
 stylesheet `index-*.css` 68.23 kB (gzip 14.84 kB) -> 65.49 kB (gzip 14.47 kB), as Vite reports it; 68,233 -> 65,496
 bytes, 2,737 fewer (4.0 %); with `gzip -9 -n`, 14,690 -> 14,461. The source `styles.css` 70,612 -> 67,881 bytes (595 ->
 593 lines, the comments added included). The script bundle is the same byte for byte (its name follows the stylesheet's
@@ -5083,21 +5083,21 @@ runs (58; the three reward_v2/v21 ones are never run here), one lane, after the 
 
 ### Merged into workbench and live again (2026-10-24; the user: "merge it into workbench and make it live")
 
-**Merge.** SIF-104..129 at 190d303 (full browser suite 58 scripts, 2,911 checks passed) with workbench at eb7425b: records
+**Merge.** SIF-104..129 at 25a8841 (full browser suite 58 scripts, 2,911 checks passed) with workbench at 86cbd88: records
 and thesis of 10-22..10-23 and record 7.389 (the final save skipped when a run never prepared), which its session committed on
 the user's word after asking this branch to hold git writes in the shared tree for a few minutes. This branch's worktree was
-busy with SIF-130/131, so the merge was built without a worktree: a private index (`git read-tree -m` of the base b57d1fd,
-190d303 and eb7425b); the two files both sides changed, docs/workbench.md and docs/functionality-reference.md, merged line by
-line with `git merge-file` (no conflict; each side's changed lines checked present); `write-tree`, `commit-tree`: 7d78d3a.
-Against 190d303 it adds exactly workbench's files, against workbench exactly this branch's 75. workbench was fast-forwarded to
-it in the shared tree (clean at that moment). 0d5ae76 merges 7d78d3a back into this branch after SIF-130/131. Not pushed
+busy with SIF-130/131, so the merge was built without a worktree: a private index (`git read-tree -m` of the base be20314,
+25a8841 and 86cbd88); the two files both sides changed, docs/workbench.md and docs/functionality-reference.md, merged line by
+line with `git merge-file` (no conflict; each side's changed lines checked present); `write-tree`, `commit-tree`: 6af61c6.
+Against 25a8841 it adds exactly workbench's files, against workbench exactly this branch's 75. workbench was fast-forwarded to
+it in the shared tree (clean at that moment). d2e0d2c merges 6af61c6 back into this branch after SIF-130/131. Not pushed
 (workbench).
 
-**Live.** Page: the 190d303 build (its frontend is 7d78d3a's: workbench changed no frontend file) - index-BWcjvxn2.js,
+**Live.** Page: the 25a8841 build (its frontend is 6af61c6's: workbench changed no frontend file) - index-BWcjvxn2.js,
 index-BHqElxol.css - beside the old assets, index.html last. Server: restarted for SIF-111's backend words and 7.389 - pid
 656409 since 15:21:56, the same 13 environment variables; the branch's preview on 5174 had been stopped first, and Windows
 reached the new server at once. A read-only live check: no console errors, no refused writes. Then, after the full browser
-suite on 0d5ae76 (58 scripts, 2,923 checks passed), the page of SIF-130/131 - index-Cy1uZffg.js, index-C80G9LnF.css - at
+suite on d2e0d2c (58 scripts, 2,923 checks passed), the page of SIF-130/131 - index-Cy1uZffg.js, index-C80G9LnF.css - at
 16:10 (frontend only, no restart). docs/frontend_implementation_status.md now has this log's pointer row (owed since
 2026-10-22, when another session was editing that file).
 
@@ -5178,13 +5178,13 @@ at once, 171: a flake. The rest passed the first time: `calibration_check` 48, `
 25, `circuit_layout_check` 4, `editor_renames_check` 8, `graph_paint_check` 6, `network_inputs_check` 9,
 `table_view_check` 10, `unit_text_check` 14. In all 58 scripts, 2,937 checks: SIF-131's 2,923 and the 14 new ones.
 
-**Review follow-up.** The review of 90603fd found one slip; it is real, and it undid part of SIF-49. A refusal's line
+**Review follow-up.** The review of 9e07f71 found one slip; it is real, and it undid part of SIF-49. A refusal's line
 went with every change of the tab's table, not with a change that makes it untrue. "4 um" typed into a count row's
 Lower and Enter: `moveFrom` puts the focus in the next row's Lower, the blur tells the amber '"4 um" is a length; this
 row holds a count.' and the cell goes back to its stored value. The first key typed in that row writes it (`Typed`,
 `patch`, `withFollowers`), `config.parameters` changes, and the line went at once: nothing on the page said any more
 that the "4 um" was dropped, which is what SIF-49 added the line for. A cell typed after Tab or a click, and Add, did
-the same, and a press on Add that left the refused cell took the line in that same press; before 90603fd the line
+the same, and a press on Add that left the refused cell took the line in that same press; before 9e07f71 the line
 stayed until a tab change or another line. "Changed" said "a value taken, an Undo, Add", and the title "once a later
 change makes it untrue", while an edit to another row, or Add, leaves the refusal true. The review's smallest fix, the
 line tied to its row (gone once that row object is no longer in the table), mends another row and Add but not Tab: Tab
@@ -5200,7 +5200,7 @@ refusal away and what leaves it. Only when the line goes changes: nothing starts
 task or writes to Virtuoso, and every question is asked as before. `tsc` clean. One lane, after the memory guard:
 `sheet_check` 61 (56 before): new, the "4 um" refusal stays while another row's Notes is typed and while its own row's
 Notes is, and goes with the row a length again, before 3 nm is taken; a voltage refused in that length row goes once
-its cell takes 4 nm. With `Editors.tsx` of 90603fd in the tree the two "stays" checks fail; with the review's row-tied
+its cell takes 4 nm. With `Editors.tsx` of 9e07f71 in the tree the two "stays" checks fail; with the review's row-tied
 fix the second one does. Unchanged and passed the first time: `dom_identity_check` 56, `task_save_check` 93,
 `model_chooser_check` 139, `spec_equations_check` 79, `task_rows_check` 57, `typing_check` 62, `find_fill_copy_check`
 50, `blocking_issues_check` 62, `editor_columns_check` 43, `looks_check` 81, `network_panel_check` 74,
@@ -5456,7 +5456,7 @@ After the full run the edge check of `spec_equations_check` also asks that score
 ellipsis; run alone it passed, 88 again. In all 58 scripts, 2,975 checks: the 2,953 of SIF-133, the 8 SIF-134 added and
 the 14 new ones.
 
-**Review follow-up.** The review of 208e75f found one slip; it is real. A Where pressed while another tab is shown could
+**Review follow-up.** The review of c089a02 found one slip; it is real. A Where pressed while another tab is shown could
 leave its cell under the pinned Issues column. `--issues-w`, the box's scroll padding, was written by the ResizeObserver
 alone, and the browser calls an observer after the frame's animation callbacks. A Where on another tab switches the tab
 and, in the same click (React runs the effects of a click's render before the next frame), asks for the animation frame
@@ -5477,7 +5477,7 @@ continues or stops a run, saves a task or writes to Virtuoso, and every question
 `blocking_issues_check` 65 (63 before), new: on Parameters with More columns shown and the box at its start the padding
 is that tab's column, narrower than the Specs' (59 against 255 px), and the Scale's Where pressed there chooses the Scale
 beside the pinned column (picture `issues-4d-scale-from-parameters.png`, of the table). A probe run of the new checks on
-`Editors.tsx` of 208e75f failed the second alone (64 of 65). One lane, after the memory guard, all passed the first
+`Editors.tsx` of c089a02 failed the second alone (64 of 65). One lane, after the memory guard, all passed the first
 time: `dom_identity_check` 56, `testbench_probes_check` 43, `spec_equations_check` 88, `task_rows_check` 57,
 `typing_check` 62, `sheet_check` 63, `find_fill_copy_check` 50, `project_help_check` 62, `blocking_issues_check` 65,
 `editor_columns_check` 45, `looks_check` 81, `unsaved_rows_check` 28, `formula_bar_check` 21, `matched_devices_check`
@@ -5666,7 +5666,7 @@ status, "At its end:", "none (this run does not train)"); they were not run on i
 never run here, asks that `.steering-check` include "The network is still choosing close to random:", which a live and
 an ended run's line both do. In all 58 scripts, 3,001 checks: the 2,990 of SIF-136 and the 11 new ones.
 
-**Review follow-up.** The review of ad784b6 found three slips; all three are real. (1) `failedWhere` sent a failed run
+**Review follow-up.** The review of 7203dc8 found three slips; all three are real. (1) `failedWhere` sent a failed run
 to the errors log for every stop reason but three, and for none at all, while the backend writes nothing there in two
 real cases. A start that failed - a task blocked, or `_record_failed_start` (worker.py: an import or a schema error,
 "effective_config.json no longer matches the task this run was created for") - writes `status.json` as failed with its
@@ -5703,7 +5703,7 @@ a crash, `exception` (`error`, its reason before, is none the engine gives and n
 waited for until the tasks are read, and the window lists ten runs. `run_control_check` 181 (178): a live run's steering
 check with no bonus reads "none recorded yet" beside 6024 updates and "no update yet" with none counted. `export_check`
 38: its expectation follows the rule (its MOCK run made 2 updates, bonus 0.401). A probe run of the new checks on the
-source of ad784b6 failed the three that read the changed words - ORPHAN's two and the live "none recorded yet" - and
+source of 7203dc8 failed the three that read the changed words - ORPHAN's two and the live "none recorded yet" - and
 passed CRASHED's, which reads as before; there the SIF-90 focus check after the form's Continue in section 9, which
 waits 2 s, failed once too, a timing flake: it passed on this tree. One lane, after the memory guard, all passed the
 first time: `calibration_check` 53, `export_check` 38, `run_control_check` 181, `run_list_check` 184,
@@ -5794,7 +5794,7 @@ same seven on the first form of the change: `task_save_check` stopped after 33 c
 (its window went away)" in its task file window (SIF-93's part, not touched here), and passed 93 alone. The other
 scripts draw neither the line nor the block and were not run.
 
-**Review follow-up.** The review of 2cdcb5b found four slips; all four are real. (1) A save that could not start said
+**Review follow-up.** The review of 8bd758d found four slips; all four are real. (1) A save that could not start said
 "once the save can start, press Undo, then Apply and save", and one of the two reasons the docs name, no connection
 chosen, ends with a choice that is an Undo step of its own (Connection.tsx `setProfileId`, App.tsx's `setConfig`,
 history.ts records by default): the Undo as told took back that choice, the Scale stayed, Apply and save stayed away,
@@ -5819,7 +5819,7 @@ the Undo after the line's refused Apply and save and after its Apply only, the b
 refused save (the check reloaded there before, so never saw it), and with the row's Lower made 1 GHz the hint reads
 "There is nothing to apply. The Scale of osc_frequency_hz is not applied: ..."; an Undo and the block's Apply only
 (nothing sent) then hold the Scale again for the part after. `calibration_check` 54: the new words. A probe run on the
-sources of 2cdcb5b (put back after, their sums compared) failed exactly those, 6 of 38 and 1 of 54. On the final
+sources of 8bd758d (put back after, their sums compared) failed exactly those, 6 of 38 and 1 of 54. On the final
 source all passed the first time: `calibration_check` 54, `run_control_check` 181, `training_tab_check` 139,
 `run_list_check` 184, `task_save_check` 93, `calibration_save_check` 38, `callouts_check` 8 (7 scripts, 697 checks).
 
@@ -5903,7 +5903,7 @@ of 106, 3 of 46 and 2 of 17; there the Task column was 175 px wide and the long 
 the ngspice press reads the line with `?.`, so a missing line fails its check instead of stopping the script, and two
 comments were reworded: the six scripts again on the final source, all passed the first time, the same counts.
 
-**Review follow-up.** The review of 0d6db53 found two slips; both are real. (1) The reason given here for the tab line's
+**Review follow-up.** The review of a716b94 found two slips; both are real. (1) The reason given here for the tab line's
 bare "[blocked]" - the "Blocked:" line under the toolbar says why - holds only for a task that cannot be loaded: that line
 (Left.tsx) is drawn only when the load fails. A Maestro task saved before such tasks could run is listed blocked (tasks.py
 `list_tasks`, `MAESTRO_NOT_RUNNABLE`) and loads all the same (`_generated_runtime`; only a run of it is refused), so its
@@ -5918,7 +5918,7 @@ clean. One lane, after the memory guard: `circuit_source_check` 19 (17 before). 
 configuration and a fixture connection in use - with an ngspice one the note reads "... choose a task in the Tasks window
 (the task's name on this tab line). A SPICE deck for ngspice can become a task there: New task, From an ngspice
 netlist..." and names no Virtuoso cell (`source-3-ngspice-connection.png`); with a Virtuoso one it names the Virtuoso
-cell and not the deck; neither page asks to load a circuit. A probe run on Left.tsx as at 0d6db53 (put back after, its sum
+cell and not the deck; neither page asks to load a circuit. A probe run on Left.tsx as at a716b94 (put back after, its sum
 compared) failed exactly the ngspice one, 1 of 19. On the final source, before the probe and again after it, all passed
 the first time: `circuit_source_check` 19, `task_list_check` 106, `ngspice_window_check` 46.
 
@@ -6077,7 +6077,7 @@ failed exactly the checks that read the changed words, columns and tooltips and 
 38; `editor_renames_check` passed. After it, `tsc` and the three scripts again on the final source, all passed the first
 time, the same counts.
 
-**Review follow-up.** The review of b10d9d0 found three slips; all three are real. (1) The older backend's line in
+**Review follow-up.** The review of b9e2ded found three slips; all three are real. (1) The older backend's line in
 `blocking_issues_check` had lost what it held. It read the Where's words, "Parameters · <ID> · ID", and placeOf reads
 pydantic's dotted index by itself, so the line would have passed had App.tsx `rejected()` stopped writing
 parameters.3.variable_id as parameters[3].variable_id - while rowOf, which makes the go-to button, and the editors' row
@@ -6111,14 +6111,14 @@ guard: `blocking_issues_check` 70 (69 before) - the older backend's row's toolti
 model window · Fine-tune: its own settings" for a bare run.advanced, "output.min_free_bytes", "Output settings" for
 checkpoint_every_seconds (`issues-4e-settings.png`). A probe run with `rejected()` passing the path on as it came
 (App.tsx put back after, its sum compared) failed exactly the older backend's line, 1 of 70; one on the four sources as
-at b10d9d0 (put back the same way) exactly the new line, 1 of 70. On the final source these passed the first time:
+at b9e2ded (put back the same way) exactly the new line, 1 of 70. On the final source these passed the first time:
 `blocking_issues_check` 70, `matched_devices_check` 38, `editor_renames_check` 8, and the scripts that open the RL model
 window, `model_chooser_check` 145, `network_panel_check` 78, `mode_suggestion_check` 20, `network_inputs_check` 9,
 `module_fold_check` 31, `reliability_check` 22, `reward_block_check` 34, `room_check` 31, `typing_check` 62,
 `dom_identity_check` 56; then every other script the runner runs (45) passed the first time but `task_save_check`, which
 stopped twice after 33 checks - the second time alone - at the step that presses Close inside the task file window it
 closes (the harness: such a click may never be acknowledged, and the closing session rejects what still waits); alone it
-then passed three times on this source, 93, and twice on the sources of b10d9d0: a timing flake of a step this follow-up
+then passed three times on this source, 93, and twice on the sources of b9e2ded: a timing flake of a step this follow-up
 does not touch. 58 scripts, 3,044 checks: the 3,043 of SIF-141 and the one new. Two comments were reworded after the run
 of the 45; `tsc` and the first three scripts passed again after it.
 
@@ -6166,7 +6166,7 @@ device · 0 nets" and its aria-label "1 device and 0 nets" (`ngspice-3-column.pn
 three screens, all passed the first time, no flakes: `dom_identity_check` 56, `virtuoso_source_check` 123,
 `task_rows_check` 57, `typing_check` 62, `project_help_check` 62, `editor_columns_check` 45, `looks_check` 83 (it reads
 every rule of the stylesheet), `circuit_source_check` 19. In all 11 scripts, 636 checks. A probe run of the first three
-on the three sources as at 645586c (put back after, their sums compared) failed exactly the new and changed checks, 1 of
+on the three sources as at 1fc332f (put back after, their sums compared) failed exactly the new and changed checks, 1 of
 47, 3 of 47 and 2 of 35. The memory guard tripped once, after the first run: the host had 0.3 GB free while WSL held 13
 GB of file cache; the user's own relief (6 x 1 GB touched and freed in Python) gave the host 5.1 GB back, and the guard
 passed. The runner's other scripts were not run: none renders these screens. The page with real data was not looked at:
@@ -6227,7 +6227,7 @@ settings or tick boxes, all passed the first time: `run_control_check` 181, `dom
 `graph_paint_check` 6 - except `training_tab_check`, which failed one timing check in that run ("a chart redraws at most
 once a second while results arrive": 6 redraws where 3 are allowed) and passed alone, 139: a flake, its charts untouched
 here. In all 17 scripts, 1,381 checks. A probe run of output_panel_check and graph_view_check on the four sources as at
-bf0d7c9 (put back after, their sums compared) failed exactly the new layout checks: the two of Output settings (the boxes
+8e93c20 (put back after, their sums compared) failed exactly the new layout checks: the two of Output settings (the boxes
 12.2 and 10.4 px wide, no size kept whole) and two of the graph view (the ground net's bottom at 666 px in the 654 px
 canvas; no fit after Fit and a taller window); the user's zoom kept passed there too, as it must. The page with real data
 was not looked at: the backend on 8765 serves another tree, and no check runs against it.
@@ -6244,7 +6244,7 @@ alone, so it was held back from the states run.
 designs miss this row: too few for their typical miss to set the Scale." followed, as before, by "Its Scale stays as it is."
 or "Half the window is proposed: ...". `tests/workbench/test_wb_calibration.py` pins the new words; `docs/workbench.md` (what
 is not proposed) says the table still shows that miss beside the note; `calibration_save_check`'s fixture note follows the
-backend's words. Made on a side branch (sif-backend-words-2, 0be4dd4) while the states run held this worktree, then
+backend's words. Made on a side branch (sif-backend-words-2, 837a3e5) while the states run held this worktree, then
 cherry-picked. Live with the next restart of the server on 8765.
 
 **Checked.** `tests/workbench/test_wb_calibration.py` 16 passed (on the side branch and again here); `calibration_save_check`
@@ -6253,10 +6253,10 @@ and the full browser suite before going live.
 ### Live again (2026-10-25; the user: "finish the rest")
 
 SIF-132..144 - the states audit's 12 batches and SIF-144's calibration words - after the weekly-usage pause (stopped at 84 %
-at 04:28 on the user's 85 % rule; the user then said "finish the rest"). Full browser suite on d228c7c: 58 scripts, 3,037
+at 04:28 on the user's 85 % rule; the user then said "finish the rest"). Full browser suite on fef028f: 58 scripts, 3,037
 checks passed; training_tab_check failed one assertion once under two lanes and passed alone (the passing retry overwrote
-its log, so the assertion is not known; every batch run of it passed). workbench (a82f950, unmoved) fast-forwarded to
-d228c7c in the shared tree. Another session ("Readability plan for Codex", record 7.390) had an uncommitted one-line edit in
+its log, so the assertion is not known; every batch run of it passed). workbench (18fe81e, unmoved) fast-forwarded to
+fef028f in the shared tree. Another session ("Readability plan for Codex", record 7.390) had an uncommitted one-line edit in
 docs/functionality-reference.md, a file this branch changed too: a full copy was kept, the line merged onto the new file with
 `git merge-file` (clean) and written back, still uncommitted; its other files untouched. A stale, empty .git/index.lock from
 20:08:38 (no git process alive; the Codex desktop app's polling `git status` is the likely source) was removed first. Page:
@@ -6285,8 +6285,8 @@ printed the numbers but did not stop the runs); they passed and are over, and no
 
 ### SIF-146 Readability F1: every page source file says what it is in its first lines (2026-10-28; group F of docs/plan-readability.md)
 
-**Found.** At the group's base 2767950, 49 of the frontend's 98 `.ts`/`.tsx` files began with an import: no first line
-said what the file is (`femetrics.py`, `metrics-before-2767950.txt`). A reader of `Editors.tsx` (1,140 lines), `RunTabs.tsx`
+**Found.** At the group's base c64a3b4, 49 of the frontend's 98 `.ts`/`.tsx` files began with an import: no first line
+said what the file is (`femetrics.py`, `metrics-before-c64a3b4.txt`). A reader of `Editors.tsx` (1,140 lines), `RunTabs.tsx`
 or `Connection.tsx` had to read on, or search the design logs, to learn which window or panel it draws and which record
 built it; where a file said so at all, it said it further down - after the imports (`store.ts`, `units.ts`,
 `circuitLayout.ts`, `CircuitGraphView.tsx`, `Pdk.tsx`) or on the main component's doc comment. Of the 49, the six files of
@@ -6310,7 +6310,7 @@ ones), each a `//` line at a file's top: no code, string, class, attribute or na
 not this package's); the longer descriptions further down stay where they are.
 
 **Checked.** `npx tsc --noEmit -p .` exit 0. `npx vite build` into a temporary folder: its five files are byte for byte
-those of the base build of 2767950 (the same names and SHA-256: `index-Bu_vjRbm.js`, `index-BUlLMzRS.css`, the uPlot and
+those of the base build of c64a3b4 (the same names and SHA-256: `index-Bu_vjRbm.js`, `index-BUlLMzRS.css`, the uPlot and
 cytoscape chunks, `index.html`) - comments do not reach the minified bundle, so the page served is the same. DOM identity
 (`--replay` the recorded answers, `--build` this build, `--compare` the base's reference; behind the memory guard, WSL 8 GB
 available and the host 3 GB free): "all 112 checks passed", 56 of 56 compared files identical (66 files written; the check
@@ -7695,7 +7695,7 @@ comment stands beside it. No other line wraps: F5 is not this package's part.
 
 **Checked.** `npx tsc --noEmit -p .` exit 0 (TypeScript 5.9.3): the new types hold at every caller - the 8 handlers
 given to `useAsyncAction`, Left.tsx's `nativeProblem(e)`, the callers of the three format.ts helpers. `npx vite build`
-into a temporary folder: byte for byte the base build's (HEAD `8b4676c`, SIF-160's), all five files -
+into a temporary folder: byte for byte the base build's (HEAD `efa2845`, SIF-160's), all five files -
 `index-B18ikkku.js`, `index-BUlLMzRS.css`, the uPlot and cytoscape chunks and `index.html` - so the page runs the base's
 code exactly. Per file, without a browser (`emit_tree.mjs`, with its inputs and outputs in `out-F3-rest/static`): each
 of the 13 files and its HEAD version compiled as the frontend's tsconfig compiles it (TypeScript's transpileModule:
@@ -7766,10 +7766,10 @@ is moved, merged, split, edited or wrapped: the 19 lines over 160 columns are ru
 part, and F6 allows comments only). The added lines are 123 columns at most, as the file's comments are (up to 142).
 
 **Checked.** Without a browser (`prove_static.py`, with its inputs and outputs in `out-F6-roadster/static`): against
-HEAD `2c1046d` the change is insert-only (45 chunks, 76 lines; no line removed or changed); each chunk is whole
+HEAD `5a8d321` the change is insert-only (45 chunks, 76 lines; no line removed or changed); each chunk is whole
 comments, standing at top level - outside any rule, comment or string - by a scan of the CSS text; with the comments
 removed, the two texts are one token stream. `npx tsc --noEmit -p .` exit 0 (TypeScript 5.9.3; no TypeScript changed).
-`npx vite build` into a temporary folder: byte for byte the base build's (HEAD `2c1046d`, built before the change;
+`npx vite build` into a temporary folder: byte for byte the base build's (HEAD `5a8d321`, built before the change;
 `diff -r` and sha256), all five files - `index-B18ikkku.js`, `index-BUlLMzRS.css`, the uPlot and cytoscape chunks and
 `index.html` - as the build drops a stylesheet's comments: the page gets exactly the bytes it got before. DOM identity
 with `--styles` (`--replay` the recorded answers, `--build` this build, `--compare` the base's `ref-styles`; behind the
@@ -7793,12 +7793,12 @@ blocks with a "Styles:" line 0 -> 44, lines over 160 columns 19 -> 19 (rules), l
 
 ### Group F closing check: the whole browser suite at both ends (2026-10-28; SIF-146 to SIF-162 of docs/plan-readability.md)
 
-**Ran.** Group F of docs/plan-readability.md came as 17 packages, SIF-146 to SIF-162 (`eb28023` to `b6c15f7`), each
+**Ran.** Group F of docs/plan-readability.md came as 17 packages, SIF-146 to SIF-162 (`0c29fed` to `d3e20fc`), each
 proved on its own - `tsc`, a build, the DOM identity check byte for byte against the base's recorded answers, the
 browser checks of its screens when the memory guard allowed them, else left to this check - and each reviewed by a
 second agent, which found nothing to fix in any of the 17. Here the part left over: the whole browser suite
-(`run_checks.sh --lanes 2 --retry-failed`, behind the memory guard) on the group's base `2767950` (SIF-145, in a
-temporary worktree with its own build) and on its end `b6c15f7`. Its files are in
+(`run_checks.sh --lanes 2 --retry-failed`, behind the memory guard) on the group's base `c64a3b4` (SIF-145, in a
+temporary worktree with its own build) and on its end `d3e20fc`. Its files are in
 `artifacts/local/reviews/groupF-2026-10-28/`.
 
 **Found.** The base: 58 scripts, 3,054 checks passed, none failed, none flaky (648 s, `suite-base.txt`). The end: 57 of
@@ -7812,7 +7812,7 @@ read hooks keep their order and their dependency lists (SIF-149), the line over 
 under longer local names (SIF-152), the status poll (page/shownRun.ts, App.tsx) was not touched, and the run window's
 pick (page/runWindowActions.ts) lost two `any`s only (SIF-161), which the build drops. SIF-163 mends the two checks.
 
-**Measured** (`femetrics.py`; `metrics-before-2767950.txt` -> `metrics-after-b6c15f7.txt`): 98 files; lines 14,923 ->
+**Measured** (`femetrics.py`; `metrics-before-c64a3b4.txt` -> `metrics-after-d3e20fc.txt`): 98 files; lines 14,923 ->
 16,664; comment lines 3,017 -> 3,390; files with a header comment 49 -> 91 (the 7 without: vite.config.ts and six of the
 files left for after the Agent window's removal on codex/latest - App.tsx, Agent.tsx, BottomPanel.tsx, Left.tsx,
 VirtuosoWindow.tsx, popupWindow.ts); any-casts 47 -> 16 (SIF-161 says why each of the 16 stays; 7 are in those files).

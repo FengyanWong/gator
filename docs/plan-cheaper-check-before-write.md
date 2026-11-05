@@ -3,7 +3,7 @@
 The user asked for this plan after the fourth audit of 2026-10-09 ("Write a plan"), then said "go on" and allowed its
 first step in Virtuoso ("Yes, run it now"). It does not reopen the decision of 2026-10-02 to keep the check ("Keep the
 check", `docs/plan-measurement-off-virtuoso.md`, "Other options"). **Status: done.** P0 changed the plan: the check
-stays exactly as it is, and the read it is made of became cheap (record 7.296). It landed on 2026-10-09 (`e7e6907`, live
+stays exactly as it is, and the read it is made of became cheap (record 7.296). It landed on 2026-10-09 (`7e4c081`, live
 23:51), and P2 measured it on the simulator.
 
 ## What the check is

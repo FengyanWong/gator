@@ -2,7 +2,7 @@
 
 Date: 2026-10-25 (session "Readability plan for Codex"; user: "write a plan for codex to refactor the project for better
 human readability", "also give the prompt"). **Plan only: nothing in the code was changed, nothing was built, and no run,
-backend, Virtuoso, Spectre or agent CLI was touched.** Measured on HEAD `a82f950` (branch `workbench`, working tree clean;
+backend, Virtuoso, Spectre or agent CLI was touched.** Measured on HEAD `18fe81e` (branch `workbench`, working tree clean;
 only the live backend on 8765 was running). Optimizer source digest at HEAD:
 `6ebf5ba532b279aa83b7b9b63d7e7c2573551691384575336bd24f91bc195da3` (it must read the same after every package).
 The plan is written for Codex to execute; appendix A is the prompt to give it.
@@ -45,7 +45,7 @@ sessions and Codex re-read the same code every day, and the thesis is being writ
 working out what `busy['op']` or `pa` means is spent again by the next reader. Documents first (group D: zero code risk,
 biggest gain), then docstrings, then the long functions.
 
-## 1. What was measured (HEAD `a82f950`, 2026-10-25)
+## 1. What was measured (HEAD `18fe81e`, 2026-10-25)
 
 Read-only scripts, nothing run against 8765, Virtuoso, Spectre or an agent CLI. Scripts and this output: section 7.
 
@@ -407,7 +407,7 @@ Two small new scripts are this plan's (Codex writes them at the start, in sectio
 parameters, docstrings, module docstrings, in-function imports, comment ratio), `pymetrics2.py` (type hints,
 abbreviations, vocabulary counts, module one-liners), `femetrics.py` (page files: header comments, `useState`,
 `useEffect`, `any`, longest top-level block), `longlist.py` (every function of 80+ lines), and
-`metrics-a82f950.txt`, their output at HEAD. Re-run: `cd /mnt/d/gator && ~/analog-optimizer-venv/bin/python -I
+`metrics-18fe81e.txt`, their output at HEAD. Re-run: `cd /mnt/d/gator && ~/analog-optimizer-venv/bin/python -I
 <folder>/pymetrics.py src/gator_workbench src/analog_optimizer tests examples` (these scripts import only the standard
 library, so `-I` is right here; it is wrong for anything that imports the package, rule 15).
 

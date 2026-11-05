@@ -635,7 +635,7 @@ archived designs exceed every cold-start size anyway. Replay check: one real sav
 1,314-1,335 known, 600 archived) proposes the identical next design and acquisition value in the frozen seed-0
 runtime and in the changed code (`amendment-A1-M0/replay_mplus.py`, `replay-*.json`).
 
-**Runtime and runs.** M0 runs in `gator-runtime-bmr-e7135c3c` (= branch commit 6bc49f4 + the change and its tests;
+**Runtime and runs.** M0 runs in `gator-runtime-bmr-e7135c3c` (= branch commit 48f33e5 + the change and its tests;
 optimizer digest 6ebf5ba5 unchanged; 69 comparison tests pass from the copy; record `step6/runtime-M0.json`, locks
 `step6/locks-M0/`, package versions as seed 0's). The three runs start fresh (`bmr-<case>-A-M0-r0-v2`,
 `step7/jobs-M0-v2.json`, queue `step7/queue-seed-0-M0-v2`), never as a continuation of the first attempt.
@@ -673,7 +673,7 @@ crash keeps its restored count as before. The wider fallback acts only under `nu
 replay proof stands.
 
 **Runtime and runs.** M0 now runs in `gator-runtime-bmr-93927147` (record `step6/runtime-M0-r3b.json`, locks
-`step6/locks-M0-r3b/`; branch commit 6bc49f4 plus both changes and their tests; optimizer digest 6ebf5ba5 unchanged;
+`step6/locks-M0-r3b/`; branch commit 48f33e5 plus both changes and their tests; optimizer digest 6ebf5ba5 unchanged;
 73 comparison tests pass from the copy). A first freeze of revision 3 with only the first change
 (`gator-runtime-bmr-e47b7561`, `step6/runtime-M0-r3.json`) was replaced before any run used it, when the repeated
 numbers were found while preparing the amplifier's resume. Jobs, names and configurations stay revision 2's

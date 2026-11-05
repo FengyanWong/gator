@@ -543,3 +543,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.470 | Read only the local runtime's stderr tail while preserving its existing error detail |
 | 7.471 | Codex's lightened workbench landed after the review's fixes (panel errors with Reload, Copy path text again, unit-test script, owed rows); full suites pass; only workbench and main remain |
 | 7.472 | README for a public reader with the name GATOR explained; the Agent tab readable: page-size text, Models and Conversation columns, state pills, a needs table, controls with words, plain notes; not live |
+| 7.473 | The MIT licence: LICENSE, the SPDX field in pyproject.toml (setuptools 77), a Licence section in the README |

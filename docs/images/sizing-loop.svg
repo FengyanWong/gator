@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="724" height="176" viewBox="0 0 724 176" role="img" aria-labelledby="t d">
+  <title id="t">How GATOR sizes a circuit</title>
+  <desc id="d">The circuit, its sizes and the specifications are read as a circuit graph. A graph encoder and policy
+    propose device sizes, which are moved to legal values and simulated. The measurements and the reward go back to
+    the policy, which learns from them.</desc>
+  <!-- The picture at the top of the repository README. Light boxes with dark words and grey arrows read on a light
+       and on a dark page alike. Keep the words in step with the README. -->
+  <style>
+    .box { fill: #ddf4ff; stroke: #54aeff; stroke-width: 1.2; }
+    .tag { fill: #f6f8fa; stroke: #afb8c1; stroke-width: 1; }
+    .line { fill: none; stroke: #6e7781; stroke-width: 1.6; }
+    .back { stroke-dasharray: 4 3; }
+    .head { fill: #6e7781; }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+           font-size: 14px; fill: #1f2328; text-anchor: middle; }
+    .small { font-size: 12.5px; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path class="head" d="M0 0 L10 5 L0 10 z"/>
+    </marker>
+  </defs>
+
+  <!-- top row: from the task to the proposed sizes -->
+  <rect class="box" x="8" y="8" width="156" height="56" rx="6"/>
+  <text x="86" y="32">Circuit, sizes and</text>
+  <text x="86" y="50">specifications</text>
+
+  <rect class="box" x="192" y="8" width="156" height="56" rx="6"/>
+  <text x="270" y="41">Circuit graph</text>
+
+  <rect class="box" x="376" y="8" width="156" height="56" rx="6"/>
+  <text x="454" y="32">Graph encoder</text>
+  <text x="454" y="50">and policy</text>
+
+  <rect class="box" x="560" y="8" width="156" height="56" rx="6"/>
+  <text x="638" y="41">Legal device sizes</text>
+
+  <!-- bottom row: the simulator and what comes back -->
+  <rect class="box" x="560" y="112" width="156" height="56" rx="6"/>
+  <text x="638" y="145">Circuit simulator</text>
+
+  <rect class="box" x="376" y="112" width="156" height="56" rx="6"/>
+  <text x="454" y="136">Measurements</text>
+  <text x="454" y="154">and reward</text>
+
+  <!-- arrows; the dashed one is what the policy learns from -->
+  <path class="line" marker-end="url(#arrow)" d="M167 36 H189"/>
+  <path class="line" marker-end="url(#arrow)" d="M351 36 H373"/>
+  <path class="line" marker-end="url(#arrow)" d="M535 36 H557"/>
+  <path class="line" marker-end="url(#arrow)" d="M638 67 V109"/>
+  <path class="line" marker-end="url(#arrow)" d="M557 140 H535"/>
+  <path class="line back" marker-end="url(#arrow)" d="M454 109 V67"/>
+  <rect class="tag" x="429" y="78" width="50" height="20" rx="10"/>
+  <text class="small" x="454" y="92.5">learn</text>
+</svg>

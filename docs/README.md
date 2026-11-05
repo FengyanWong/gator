@@ -4,7 +4,7 @@ Start with the [repository map](../README.md), then [workbench behavior](workben
 [optimizer package](optimizer-package.md). The [functionality reference](functionality-reference.md) maps a feature
 to its code, tests and records. The [development index](frontend_implementation_status.md) finds individual changes.
 
-This index covers the documents directly in this folder and every file in workbench-log/.
+This index covers the documents directly in this folder, the picture in images/ and every file in workbench-log/.
 **Kept current** marks a maintained reference or active protocol. **Frozen** marks dated scope, evidence or history;
 later evidence does not rewrite an earlier result. A file may have a current contract and frozen result sections.
 
@@ -33,6 +33,7 @@ Some openings precede later execution sections: follow the plan's later records 
 | [experiment-recording.md](experiment-recording.md) | The optional SQLite recording path, storage rules, replay recovery and exports. | Living | Contract kept current; dated acceptance evidence retained |
 | [reward-v2.md](reward-v2.md) | The reward contract and the v2/v2.1 engineering qualification record. | Living / evidence | Contract kept current; dated results frozen |
 | [performance-measurement.md](performance-measurement.md) | How to time work fairly on the shared machine without disturbing other sessions. | Living | Kept current |
+| [images/sizing-loop.svg](images/sizing-loop.svg) | The picture at the top of the repository README: the steps of one sizing loop, from the circuit to the reward. | Living | Kept in step with the README |
 
 ## Plans
 

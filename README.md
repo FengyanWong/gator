@@ -4,15 +4,9 @@ GATOR sizes analog circuits. Give it a circuit whose connections are fixed, the 
 lengths, multipliers and the like) and the specifications to meet. It proposes values, simulates every proposal in a
 real circuit simulator, and learns from the results.
 
-```mermaid
-flowchart LR
-    A["Circuit, sizes and specifications"] --> B["Circuit graph"]
-    B --> C["Graph encoder and policy"]
-    C --> D["Legal device sizes"]
-    D --> E["Circuit simulator"]
-    E --> F["Measurements and reward"]
-    F -. "learn" .-> C
-```
+![How GATOR sizes a circuit: the circuit, its sizes and the specifications are read as a circuit graph; a graph
+encoder and policy propose device sizes, which are moved to legal values and simulated; the measurements and the
+reward go back to the policy, which learns from them.](docs/images/sizing-loop.svg)
 
 The name stands for **Graph-Aware Transformer Optimizer for Reinforcement learning**:
 

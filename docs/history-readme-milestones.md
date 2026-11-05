@@ -1,6 +1,6 @@
 # README history: milestones and former reference sections
 
-Archived on 2026-10-25 from `README.md` at `a82f950` for readability package D1.
+Archived on 2026-10-25 from `README.md` at `18fe81e` for readability package D1.
 The English table quotes numbers from the original paragraphs. They belong to those historical acceptances,
 not to the current test suite or a new experiment.
 

@@ -68,7 +68,7 @@ A summary for new sessions; everything below is the chronological record, oldest
 - **A netlist comparison that reads numbers (7.309, 2026-10-11; user: "but 14.05 is the same as 14.050", then "B"):** the
   optimizer package changed on purpose - `backends/native_preparation.py`: `first_difference` takes a parameter's number
   spelled in two ways as one value (`same_statement`: exact decimals, everything else text) - so the source digest moved
-  `94e7dd4f...` -> `6724e52b9ce8bcbb...` (uncommitted; this change alone on `714b6a1`). Step 1 of the transfer
+  `94e7dd4f...` -> `6724e52b9ce8bcbb...` (uncommitted; this change alone on `fddc028`). Step 1 of the transfer
   experiment (record 7.303) ran on `94e7dd4f...`, from `~/gator-runtime-7301`; later steps run on the new digest. No
   network, reward or learning code changed: saved models fine-tune and evaluate; an exact resume needs the first copy.
   The offer had been a workbench-only spelling rule (no digest step); the user chose the comparison.

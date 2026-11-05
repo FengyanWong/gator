@@ -483,258 +483,258 @@ One row per commit, newest last.
 | `5d34318` | 10-09 19:48 | - | record only: names the commit of record 7.293 (764fd63) and adds the table rows for f3e0dfd and 764fd63 |
 | `44881d8` | 10-09 22:03 | 7.294 | audit of 2026-10-09: OCEAN's results let go after each measurement (`ocnResetResults()`), the learn-while-simulating switch on by default after its check, a plan for a cheaper check before each write (session "Frontend workbench layout design") |
 | `9e7cbf3` | 10-09 22:11 | - | record only: names the commit of record 7.294 (44881d8) and its Live line, corrects "every run recorded before" (runs recorded before 7.281 never stated the switch), table rows for 5d34318 and 44881d8 (session "Frontend workbench layout design") |
-| `e7e6907` | 10-09 23:50 | 7.296 | the whole-cell read built once instead of line by line (`schematic_read.read_cell`): the same answer, 434 -> 6 ms inside Virtuoso on mscr_vco_lin_c; landed before the encoder queue's nine runs (session "Frontend workbench layout design") |
-| `0803c7f` | 10-10 16:38 | - | docs: three lines of record 7.296 say "the 180 nm process cells" |
-| `f538535` | 10-10 17:01 | 7.295 | the AgenticSizing circuits on a second 0.18 um PDK; PDK quirks and conditions from local settings (session "Encoder run plan revision") |
-| `19e909a` | 10-10 17:01 | 7.297 | tests/test_parser.py fixture path; no test module imports a conftest (session "Refactoring plan") |
-| `7695b7e` | 10-10 17:01 | 7.298 | transferable network inputs: specs as a set, device families; digest 8f100145 (session "Agentic sizing agent circuit runs") |
-| `b231eb3` | 10-10 17:01 | 7.299 | a missing value of a hard spec is a failed row; digest 94e7dd4f (session "Encoder run plan revision") |
-| `70bed2d` | 10-10 17:01 | 7.300 | the AgenticSizing circuits rebuilt from published netlists; a computed field written through its typed twin (session "Agenticsizing encoder restart and LDO comparison") |
-| `fe3028a` | 10-10 19:43 | 7.301 | plan only: the transfer experiment (networks with the new inputs, SAC against Bayesian optimization, new targets, a second PDK, one general model on unseen circuits); the record file rolled over to `7.301-and-later.md` (session "Encoder experiment plan setup") |
-| `29ce8ad` | 10-10 19:43 | 7.302 | a task can be renamed: the name it is shown under; its key, files, cell, runs and models unchanged (session "Encoder experiment plan setup") |
-| `56b2efc` | 10-10 17:01 | - | record only: names the commits of records 7.295 and 7.297-7.300, and the table rows for 0803c7f and the chain |
-| `714b6a1` | 10-10 19:43 | - | record only: names the commits of records 7.301 and 7.302, and their table rows |
-| `52b9bc6` | 10-11 20:21 | 7.303-7.316 | the transfer experiment's steps 1 and 2 with first readings; Bayesian optimization (TuRBO-1); a run binds its own copy of the bridge's settings file; a Probe that measures the sizes; the netlist comparison reads numbers (optimizer digest 94e7dd4f -> 6724e52b); a lock per Virtuoso session and per cell; offline re-scoring under several target sets; Maestro helpers removed; OCEAN closes its result folder (sessions "Encoder experiment plan setup" and "Trained model spec change topology proof") |
-| `da1504a` | 10-11 20:21 | - | record only: names the commit of records 7.303-7.316, and the table rows for 56b2efc, 714b6a1 and 52b9bc6 |
-| `1dfeae4` | 10-12 00:05 | 7.317 | a second build of the network inputs: bench sources on their own scales, net tags by one rule, operating-point ratios; offline pools take them; the transfer plan's step 3b (session "Circuit training and SAC RL graph transformer", committed by the session "Model continuation and input fingerprint bugs" beneath its own records) |
-| `7bfa48b` | 10-12 00:05 | 7.319 | four review findings: Continue asks for a run's view with its own component list; an offline pool pins what each source was shown; a published model keeps its component list; test variables keep their case (session "Model continuation and input fingerprint bugs") |
-| `4222238` | 10-12 00:05 | 7.322 | five more review findings: a run continued after a crash counts what it committed after its save point; one ngspice net per node name; a relabelled copy keeps a stated scale; New run like this takes the run's optimizer; a late Delete task answer leaves a newer choice alone (session "Model continuation and input fingerprint bugs"; no browser check run) |
-| `7c12d1b` | 10-12 00:05 | - | record only: names the commits of records 7.317, 7.319 and 7.322, and the table rows for da1504a and the three commits |
-| `75f6dda` | 10-12 17:03 | 7.318, 7.320, 7.321, 7.323-7.332 | the transfer experiment's steps 3 to 6 and the port history; audit fixes and a refactor (model-input contracts, engine phases, ngspice helpers); CircuitGPS in the optimizer package (digest 6724e52b -> e29b39e1) with its import guards; a new model's network inputs come with its encoder's template (sessions "Encoder experiment plan setup", "Circuit training and SAC RL graph transformer", Codex "Project audit" and "Build the new encoder") |
-| `cfdffaa` | 10-12 17:05 | - | record only: names the commit of records 7.318, 7.320, 7.321 and 7.323-7.332 in their entries |
-| `7ae9e60` | 10-12 17:04 | - | record only: the table rows for 7c12d1b, 75f6dda and cfdffaa; five index rows name their commit |
-| `0b0778d` | 10-12 17:51 | 7.333 | a starting size the optimizer's grid does not hold is named before a task is saved or a run is tried; workbench only (session "Encoder experiment plan setup") |
-| `73c121a` | 10-12 17:52 | - | record only: names the commit of record 7.333, and the table rows for 7ae9e60 and 0b0778d |
-| `42eac2e` | 10-12 19:42 | 7.334, 7.335 | the published reference and system read by their reward, a correction in 7.330; the transfer experiment's full step 1 comparison, 7.313's tables and the plan's results replaced; docs only (session "Encoder experiment plan setup") |
-| `a01cca0` | 10-12 19:44 | - | record only: names the commit of records 7.334 and 7.335, corrects two statements of its message, and the table rows for 73c121a and 42eac2e |
-| `b80b08b` | 10-15 02:51 | 7.336-7.352 | Round 3 archive training (GraphGPS, CircuitGPS), CircuitGPS v2 and its CPU speed-up (optimizer digest e29b39e1 -> ba551575), two Virtuoso sessions under one connection and the work sent to whichever is free, Round 2 runs, the reading guide, review fixes (the user's Codex session; session "check codex work") |
-| `f8ff5ce` | 10-15 02:51 | - | record only: names the commit of records 7.336-7.352, and the table rows for a01cca0 and b80b08b |
-| `9d87ccb` | 10-17 01:21 | 7.353-7.359 | Round 3 seed 0 with an RGCN arm and its session-2 recovery; Step 1's GATv2 arm; CircuitGPS version 3, opt-in (optimizer digest ba551575 -> 6ebf5ba5), its offline training and its Round 3 arms; the log rolled over (sessions "check codex work" and "Weekly experiments summary") |
-| `d0938bc` | 10-17 01:22 | - | record only: names the commit of records 7.353-7.359, and the table rows for f8ff5ce and 9d87ccb |
-| `342b77a` | 10-17 02:28 | 7.356, 7.357 | the index rows of the two CircuitGPS version 3 records, written from their entries (their session had ended) |
-| `dd6398a` | 10-17 02:38 | 7.360 | the Roadster look: dark only, red, white and black, Draft A built into the workbench (session "Frontend workbench layout design") |
-| `72f8a1d` | 10-17 02:38 | - | record only: names the commit of record 7.360, and the table rows for d0938bc, 342b77a and dd6398a |
-| `5edbd37` | 10-17 05:21 | 7.361 | the Roadster look made live (page published, 8765 restarted 02:35, bringing 7.351/7.352 live); the connection pill keeps its state word (session "Frontend workbench layout design") |
-| `ccd1d3f` | 10-17 05:21 | - | record only: names the commit of record 7.361, the table rows for 72f8a1d and 5edbd37, and d0938bc's time corrected |
-| `705d43d` | 10-17 13:46 | 7.362 | the task's card: the task across the left and the centre, the circuit on request - the user's Option D (session "Frontend workbench layout design") |
-| `8b67d97` | 10-17 13:47 | - | record only: names the commit of record 7.362, and the table rows for ccd1d3f and 705d43d |
-| `a481619` | 10-19 05:08 | 7.372, 7.376, 7.380 | nine page changes; the page's words name its buttons (Save as, not "Save task"); 8765 live again after the PC restarted (session "Frontend workbench layout design") |
-| `8d43a00` | 10-19 05:09 | - | record only: names the commit of records 7.372, 7.376 and 7.380, and the table rows for 8b67d97 and a481619 |
-| `c6f172c` | 10-19 16:49 | 7.363, 7.381, 7.383 | Round 4 offline: the plan (section 7b) and its results - LOADBench does not help the Round 3 models, option 1 neither (session "Training encoders with Zenodo dataset") |
-| `a5d3c5c` | 10-19 16:49 | - | record only: names the commit of records 7.363, 7.381 and 7.383, and the table rows for 8d43a00 and c6f172c |
-| `f6a989e` | 10-19 19:50 | 7.382 | TuRBO against transfer-learned SAC on three tasks (a trained model wins only near its training; TuRBO wins on the amplifier); TuRBO's memory growth fixed with malloc_trim after each proposal |
-| `c2177fa` | 10-19 19:59 | - | record only: names the commit of record 7.382, and the table rows for a5d3c5c and f6a989e |
-| `f87b8ce` | 10-20 13:20 | 7.384 | TuRBO and transfer-learned SAC combined: neither a TuRBO-data model nor a TuRBO warm start helps; three seeds on every row (session "Zenodo dataset encoder performance") |
-| `d6f6d81` | 10-20 13:21 | - | record only: names the commit of record 7.384, and the table rows for c2177fa and f87b8ce |
-| `9f761f7` | 10-20 14:10 | 7.364-7.371, 7.373-7.375, 7.377-7.379 | less work for the same results: streamed CSVs, projected and bounded reads, leaner inventories and ZIP exports, repeated parsing and sorting removed; the log rolled over twice (the user's Codex session) |
-| `694d9a1` | 10-20 14:10 | - | record only: names the commit of Codex's records 7.364-7.379, and the table rows for d6f6d81 and 9f761f7 |
-| `286deaf` | 10-23 11:45 | 7.385, 7.388 | Round 3 seeds 1 and 2: the seed-0 matrix twice more, 72 real runs, two same-run resumes (7.385); all 72 complete, audited with seed 0, feasible designs per arm for seeds 0/1/2 (7.388) (session "Training encoders with Zenodo dataset") |
-| `ec2e163` | 10-23 11:45 | - | record only: names the commit of records 7.385 and 7.388, and the table rows for 694d9a1 and 286deaf |
-| `5e25dd7` | 10-23 11:47 | 7.386, 7.387 | plan for Claude: matched-archive comparison of TuRBO transfer, Pareto MOBO and SAC (docs/plan-bo-mobo-rl-archive-comparison.md, transfer-plan section 16), refined from the random-forest calibration chat (Codex's records, committed on the user's word by the session "Training encoders with Zenodo dataset") |
-| `8c04206` | 10-23 11:48 | - | record only: names the commit of records 7.386 and 7.387, and the table rows for ec2e163 and 5e25dd7 |
-| `2b0f47b` | 10-24 15:15 | 7.434 | archive comparison steps 2-6 (branch `bo-mobo-rl`): goal views, `turbo_archive`/`mobo` searches in the engine with exact save/continue and crash re-tell, pretrain pool settings, the goal-view rule of a comparison run; frozen runtime gator-runtime-bmr-f143d691 (session "Training encoders with Zenodo dataset") |
-| `d9d5ba0` | 10-24 15:16 | - | plan only: the transfer experiment's journal track is dropped (user, 2026-10-23: "I am not publishing") - the status table's Journal row and sections 14-15 say J0-J5 and the manuscript milestones will not be run, kept for reference |
-| `e4d295c` | 10-24 15:19 | 7.389 | a run that stops while it is being prepared, before its save points are opened, skips its final save: the original error alone, the summary's `output.note` says why, a crash test of the unresolved-launch refusal; the log rolled over (session "Skip the final save when a run never prepared") |
-| `da05b8b` | 10-26 12:58 | 7.436 | Merge completed readability packages into latest integration |
-| `7ef598b` | 10-26 13:00 | 7.436 | Merge archive comparison implementation and preserve its development record |
-| `5a38798` | 10-26 13:00 | 7.436 | Preserve codex/readability-before-refresh-2026-10-26 history; equivalent changes already integrated |
-| `e513bc0` | 10-26 13:00 | 7.436 | Preserve sif-backend-words-2 history; equivalent changes already integrated |
-| `de54083` | 10-26 13:00 | 7.436 | Preserve sif-help-text history; equivalent changes already integrated |
-| `9192e9b` | 10-26 13:14 | 7.436 | Integrate pending work and remove the frontend Agent interface |
-| `8694d05` | 10-26 13:48 | 7.437 | T2-BO: document archive-comparison test helpers |
-| `871213a` | 10-26 14:04 | 7.437 | P1-06: document api/models.py |
-| `68d934d` | 10-26 14:08 | 7.437 | P1-07: document api/run_routes.py |
-| `4ada3b2` | 10-26 14:12 | 7.437 | P1-08: document api/settings_routes.py |
-| `3066e96` | 10-26 14:16 | 7.437 | P1-09: document Task API operations |
-| `f16ec90` | 10-26 14:20 | 7.437 | P1-10: document bayes.py |
-| `d9cc6e3` | 10-26 14:24 | 7.437 | P1-11: document best_design.py |
-| `7a55fd7` | 10-26 14:28 | 7.437 | P1-12: document bridge_connect.py |
-| `4f7d6f6` | 10-26 14:32 | 7.437 | P1-13: document bridge_setup.py |
-| `1b8e302` | 10-26 14:35 | 7.437 | P1-14: document budget.py |
-| `9a1da30` | 10-26 14:39 | 7.437 | P1-15: document caches.py |
-| `afeb28b` | 10-26 14:43 | 7.437 | P1-16: document CDF preparation ownership |
-| `9edf91c` | 10-26 14:46 | 7.437 | P1-17: document cdf_facts.py |
-| `87e355a` | 10-26 14:50 | 7.437 | P1-18: document cdf_text.py |
-| `d70d0b9` | 10-26 14:54 | 7.437 | P1-19: document cdf_write.py |
-| `78fd7b9` | 10-26 14:58 | 7.437 | P1-20: document checkpoints.py |
-| `71c050b` | 10-26 15:02 | 7.437 | P1-21: document Native circuit import |
-| `2d427f8` | 10-26 15:07 | 7.437 | P1-22: document compile.py |
-| `e0d1da2` | 10-26 15:11 | 7.437 | P1-23: document connection.py |
-| `ecaa255` | 10-26 15:15 | 7.437 | P1-24: document Task readiness evidence |
-| `c8cb99e` | 10-26 15:19 | 7.437 | P1-25: document corner_check.py |
-| `2e4e7f2` | 10-26 15:22 | 7.437 | P1-26: document deck_ops.py |
-| `0d059a6` | 10-26 15:27 | 7.437 | P1-27: document device_models.py |
-| `b5adea9` | 10-26 16:45 | 7.437 | P1-28: document diffs.py |
-| `3016b88` | 10-26 16:49 | 7.437 | P1-29: document Remembered directories |
-| `d4e3677` | 10-26 16:54 | 7.437 | P1-30: document engine.py |
-| `41ca01f` | 10-26 16:59 | 7.437 | P1-31: document engine_commit.py |
-| `a0d835b` | 10-26 17:04 | 7.437 | P1-32: document Run preparation and finalization |
-| `acb5d0b` | 10-26 18:25 | 7.437 | P1-33: document experiments.py |
-| `1051fa4` | 10-26 18:28 | 7.437 | P1-34: document Device vocabularies |
-| `2804e5b` | 10-26 18:33 | 7.437 | P1-35: document generic_profile.py |
-| `4bd5702` | 10-26 18:36 | 7.437 | P1-36: document graph_view.py |
-| `acb5cae` | 10-26 18:41 | 7.437 | P1-37: document lanes.py |
-| `cac1cca` | 10-27 00:06 | 7.437 | P1-38: document layout.py |
-| `538a373` | 10-27 00:11 | 7.437 | P1-39: document model_library.py |
-| `efdbed5` | 10-27 00:15 | 7.437 | P1-40: document model_scan.py |
-| `ffbd9af` | 10-27 00:20 | 7.437 | P1-41: document model_structure.py |
-| `3e50e19` | 10-27 00:25 | 7.437 | P1-42: document modes.py |
-| `d75a139` | 10-27 11:57 | 7.437 | P1-43: document network_inputs.py |
-| `cfffb64` | 10-27 12:02 | 7.437 | P1-44: document network_presets.py |
-| `55fc985` | 10-27 12:07 | 7.437 | P1-45: document ngspice instrumentation |
-| `73243e5` | 10-27 16:32 | 7.437 | P1-46: document ngspice_backend.py |
-| `facaeb0` | 10-27 16:37 | 7.437 | P1-47: document ngspice_link.py |
-| `e2dc80d` | 10-27 17:35 | 7.437 | P1-48: document ngspice_netlist.py |
-| `a27ce84` | 10-27 18:19 | 7.437 | P1-49: document ngspice_syntax.py |
-| `6e85da9` | 10-27 18:27 | 7.437 | P1-50: document ngspice_tasks.py |
-| `60a97de` | 10-27 18:35 | 7.437 | P1-51: document ocean.py |
-| `9883c72` | 10-27 18:43 | 7.437 | P1-52: document Offline replay support |
-| `e1a9cca` | 10-27 18:51 | 7.437 | P1-53: document paths.py |
-| `ba5f235` | 10-27 18:59 | 7.437 | P1-54: document pdk_record.py |
-| `066d815` | 10-27 19:08 | 7.437 | P1-55: document pdk_remote.py |
-| `78698ca` | 10-27 19:16 | 7.437 | P1-56: document pretrain.py |
-| `025ba19` | 10-27 19:23 | 7.437 | P1-57: document Saved-task documents |
-| `31409f1` | 10-27 23:27 | 7.437 | P1-58: document psf_binary.py |
-| `0edbb43` | 10-27 23:35 | 7.437 | P1-59: document recipes.py |
-| `a8e5c57` | 10-27 23:46 | 7.437 | P1-60: document Run ownership |
-| `bdef87c` | 10-28 06:56 | 7.437 | P1-61: document runs.py |
-| `fe02dd1` | 10-28 07:05 | 7.437 | P1-62: document saved_rows.py |
-| `d5260c0` | 10-28 09:04 | 7.437 | P1-63: document schema.py |
-| `de0b5ab` | 10-28 09:43 | 7.437 | P1-64: document security.py |
-| `3d8be8b` | 10-28 10:35 | 7.437 | P1-65: document session_routing.py |
-| `6b33bb3` | 10-28 10:42 | 7.437 | P1-66: document simulation_artifacts.py |
-| `e2d7ee3` | 10-28 10:49 | 7.437 | P1-67: document spec_descriptors.py |
-| `ffc1148` | 10-28 11:35 | 7.437 | P1-68: document spec_equations.py |
-| `48a10e8` | 10-28 11:42 | 7.437 | P1-69: document spec_programs.py |
-| `6363e80` | 10-28 11:50 | 7.437 | P1-70: document storage/atomic.py |
-| `5442531` | 10-28 11:58 | 7.437 | P1-71: document storage/dataset.py |
-| `ef38073` | 10-28 12:09 | 7.437 | P1-72: document storage/tables.py |
-| `ad639a9` | 10-28 12:17 | 7.437 | P1-73: document structures.py |
-| `858c085` | 10-28 13:02 | 7.437 | P1-74: document Task organization |
-| `ae07dcd` | 10-28 13:11 | 7.437 | P1-75: document task_registry.py |
-| `cdac340` | 10-28 13:18 | 7.437 | P1-76: document tasks.py |
-| `522849d` | 10-28 13:28 | 7.437 | P1-77: document trajectory.py |
-| `5495a9a` | 10-28 13:35 | 7.437 | P1-78: document units.py |
-| `ad8aa6a` | 10-28 13:44 | 7.437 | P1-79: document validation.py |
-| `3c0fded` | 10-28 13:52 | 7.437 | P1-80: document virtuoso_setup.py |
-| `71d547f` | 10-28 14:03 | 7.437 | P1-81: document worker.py |
-| `9fab5a2` | 10-28 14:13 | 7.437 | P1-82: document working_copy.py |
-| `8089170` | 10-28 14:25 | 7.437 | P1-83: document archive_compare/views.py |
-| `a02a1b7` | 10-28 15:02 | 7.437 | P1-84: document archive_compare/mobo.py |
-| `e175ccb` | 10-28 15:13 | 7.437 | P1-85: document archive_compare/turbo_archive.py |
-| `575a1a1` | 10-28 15:30 | 7.437 | P1-86: document archive_compare/contract.py |
-| `443722a` | 10-28 15:44 | 7.437 | P1-87: document archive_compare/coords.py |
-| `3765be0` | 10-28 15:58 | 7.437 | P1-88: document archive_compare/runtime.py |
-| `42786e5` | 10-28 17:28 | 7.437 | P2-parse-text-outer: extract reviewed named steps |
-| `0a17074` | 10-28 17:48 | 7.437 | P2-engine-commit: extract reviewed named steps |
-| `916b1dd` | 10-28 17:56 | 7.437 | P2-pretrain-prepare-pool: extract reviewed named steps |
-| `c4bce98` | 10-28 18:02 | 7.437 | P2-ngspice-expand: extract reviewed named steps |
-| `5f0997a` | 10-28 18:11 | 7.437 | P2-connection-run-layers: extract reviewed named steps |
-| `fb74811` | 10-28 18:33 | 7.437 | P2-ngspice-link-run-layers: extract reviewed named steps |
-| `9e2cf72` | 10-28 18:42 | 7.437 | P2-virtuoso-task-routes: extract reviewed named steps |
-| `00bf473` | 10-28 18:54 | 7.437 | P2-run-list-model-routes: extract reviewed named steps |
-| `0a03dd3` | 10-28 19:27 | 7.437 | P2-task-routes: extract reviewed named steps |
-| `8131552` | 10-28 21:07 | 7.437 | TF-commit-json-test: follow the live commit step into its module in a structural test |
-| `0b347b2` | 10-28 21:18 | 7.437 | P2-task-save: extract reviewed named steps |
-| `be23e36` | 10-28 21:28 | 7.437 | P2-engine-preparation: extract reviewed named steps |
-| `f7a32a1` | 10-28 21:38 | 7.437 | P2-structures-recognize: extract reviewed named steps |
-| `4516bc9` | 10-28 21:47 | 7.437 | P2-profile-generate: extract reviewed named steps |
-| `bbb1606` | 10-28 22:01 | 7.437 | P2-pretrain-execute: extract reviewed named steps |
-| `00c3ea5` | 10-28 22:11 | 7.437 | P2-cdf-rules: extract reviewed named steps |
-| `411d2bc` | 10-28 22:35 | 7.437 | P2-runs-prepare-run: extract reviewed named steps |
-| `08126cf` | 10-29 01:00 | 7.437 | P2-modes-build: extract reviewed named steps |
-| `fa935f0` | 10-29 01:42 | 7.437 | P2-graph-view: extract reviewed named steps |
-| `2e13a00` | 10-29 01:55 | 7.437 | P2-pdk-record: extract reviewed named steps |
-| `95144b1` | 10-29 02:07 | 7.437 | P2-validation-network-inputs: extract reviewed named steps |
-| `20903f1` | 10-29 02:18 | 7.437 | P2-checkpoints-save: extract reviewed named steps |
-| `b44d618` | 10-29 02:29 | 7.437 | P2-schema-hashed: extract reviewed named steps |
-| `5d950fc` | 10-29 02:38 | 7.437 | P2-cdf-write: extract reviewed named steps |
-| `10e4e29` | 10-29 02:45 | 7.437 | P2-summary-build: extract reviewed named steps |
-| `de1b9fe` | 10-29 02:55 | 7.437 | P2-bridge-read-main: extract reviewed named steps |
-| `8f0cd93` | 10-29 03:01 | 7.437 | P2-start-run: extract reviewed named steps |
-| `5c4e1af` | 10-29 03:07 | 7.437 | P2-model-classify: extract reviewed named steps |
-| `830da7e` | 10-29 03:14 | 7.437 | P3-calibration-scale: simplify reviewed nested control flow |
-| `00b3d78` | 10-29 03:20 | 7.437 | P3-probe-facts: simplify reviewed nested control flow |
-| `a9c76ab` | 10-29 03:25 | 7.437 | P3-model-structure: simplify reviewed nested control flow |
-| `12994d2` | 10-29 03:31 | 7.437 | P3-ngspice-result: simplify reviewed nested control flow |
-| `9dbf1cb` | 10-29 03:37 | 7.437 | P3-measurement-checks: simplify reviewed nested control flow |
-| `28687ea` | 10-29 03:43 | 7.437 | P3-export-cells: simplify reviewed nested control flow |
-| `ae07b99` | 10-29 03:48 | 7.437 | P3-token-scanner: simplify reviewed nested control flow |
-| `5adec8d` | 10-29 03:54 | 7.437 | P3-directory-bytes: simplify reviewed nested control flow |
-| `aaab8c9` | 10-29 04:00 | 7.437 | P4-engine-preparation: clarify private local names |
-| `d1ab080` | 10-29 04:06 | 7.437 | P4-schema: clarify private local names |
-| `84c0098` | 10-29 04:12 | 7.437 | P4-cdf-write: clarify private local names |
-| `d0f3561` | 10-29 04:18 | 7.437 | P4-consistency: clarify private local names |
-| `777d787` | 10-29 04:23 | 7.437 | P4-pdk-remote: clarify private local names |
-| `4548bf9` | 10-29 04:30 | 7.437 | P4-bridge-setup: clarify private local names |
-| `63a3f1b` | 10-29 04:36 | 7.437 | P4-cell-hold: clarify private local names |
-| `eef5a5c` | 10-29 04:42 | 7.437 | P4-lanes: clarify private local names |
-| `4685d75` | 10-29 04:50 | 7.437 | P4-psf-binary: clarify private local names |
-| `33fff8d` | 10-29 04:56 | 7.437 | P4-spec-programs: clarify private local names |
-| `a4d5f16` | 10-29 05:02 | 7.437 | P4-training-series: clarify private local names |
-| `a722733` | 10-29 05:34 | 7.437 | P4-validation: clarify private local names |
-| `917307d` | 10-29 05:42 | 7.437 | P4-working-copy: clarify private local names |
-| `952ab6b` | 10-29 05:49 | 7.437 | P5-signature-hints: add reviewed signature type hints |
-| `d6b19d3` | 10-29 05:58 | 7.437 | P6-comments-constants: explain steps and name repeated constants |
-| `7d3f628` | 10-29 06:06 | 7.437 | P7-line-wrapping: wrap previously edited source to 120 columns |
-| `acab2cc` | 10-29 06:16 | 7.437 | P1R-docstring-revision: revise P1 docstrings after review |
-| `216f7a1` | 10-29 06:23 | 7.437 | P8-paths: name the values that steps share |
-| `89b13ca` | 10-29 12:05 | 7.437 | P8-ngspice-backend: name the values that steps share |
-| `b20f32a` | 10-29 12:11 | 7.437 | P8-ngspice-netlist: name the values that steps share |
-| `f921d41` | 10-29 12:17 | 7.437 | P8-structures: name the values that steps share |
-| `b9c6515` | 10-29 12:23 | 7.437 | P8-task-save: name the values that steps share |
-| `febae89` | 10-29 12:29 | 7.437 | P8-graph-view: name the values that steps share |
-| `679555c` | 10-29 12:35 | 7.437 | P8-runs: name the values that steps share |
-| `d948a81` | 10-29 12:40 | 7.437 | P8-profile-generate: name the values that steps share |
-| `8dac847` | 10-29 12:46 | 7.437 | P8-modes: name the values that steps share |
-| `c2003d8` | 10-29 12:52 | 7.437 | P8-pretrain: name the values that steps share |
-| `99022ca` | 10-29 12:58 | 7.437 | P8-engine-commit: name the values that steps share |
-| `27f30d9` | 10-29 13:06 | 7.437 | P8-engine-rows: name the values that steps share |
-| `7c6cfe2` | 10-29 13:12 | 7.437 | P8-runs-resume: name the values that steps share |
-| `2a6dd42` | 10-29 13:50 | 7.437 | P8-start-directory: name the values that steps share |
-| `c3775ba` | 10-29 13:56 | 7.437 | P8-model-scan: name the values that steps share |
-| `f8dd00f` | 10-29 14:01 | 7.437 | P8-cdf-rules: name the values that steps share |
-| `88133e0` | 10-29 14:42 | 7.390-7.433 | Records 7.390-7.433 as written in the live checkout: the readability plan, Codex's seed-0 campaign and M0, and the log rollovers |
-| `0e6802f` | 10-29 16:00 | 7.438 | Land codex/latest on workbench: the readability plan, the Agent-window removal and the archive-comparison steps (record 7.438) |
-| `22c1a69` | 10-29 16:04 | 7.438 | Record: workbench fast-forwarded to the landing merge 0e6802f (record 7.438), and its table row |
-| `6288fbc` | 10-29 16:29 | 7.439 | Model scan: a subcircuit that places itself stops at the nesting limit (record 7.439) |
-| `7bd2115` | 10-29 15:35 | 7.441 | Add local NVIDIA Agent with verified lifecycle and undoable proposals |
-| `d5a2126` | 10-29 15:43 | 7.442 | Integrate verified local Bolt 74B profile on 74B-latest |
-| `199bb93` | 10-29 15:39 | 7.441 | Record local Agent implementation commit |
-| `64ff8f1` | 10-29 15:43 | 7.442 | Record verified 74B profile commit |
-| `3f88952` | 10-29 16:34 | 7.440 | Record 7.440: live again (page built, 8765 restarted), workbench pushed, merged old branches deleted |
-| `048905b` | 10-29 17:20 | 7.443 | Land Codex's local Agent (74B-latest) on workbench (record 7.443) |
-| `e150d3c` | 10-30 17:53 | 7.445 | Separate private thesis repository and record authorized history purge |
-| `f07d391` | 10-30 17:54 | 7.445 | Record thesis separation commit |
-| `87e2ce2` | 10-30 21:28 | - | Plans of 2026-10-30, written before any seed-1/2 or reverse-port run (Amendment A2, transfer plan Section 17, follow-up plan) |
-| `ebbe3a8` | 10-30 21:35 | 7.446, 7.447 | Shared graph/search primitives and typed editor operations (Codex's work, committed on codex/reduce-duplication) |
-| `7444c04` | 10-30 21:39 | 7.446, 7.447 | Merge codex/reduce-duplication into workbench |
-| `e571e6b` | 10-30 21:39 | 7.448 | Record 7.448: Codex's reduce-duplication work merged into workbench |
-| `89e2106` | 10-30 23:01 | 7.449 | Amendment A1's M0 code on workbench, as it ran (record 7.449) |
-| `3a9380f` | 10-31 00:52 | 7.450, 7.451 | After a crash only an M0 search reads the event log (record 7.451); record 7.450 (seeds 1-2 launch) |
-| `2903f0a` | 11-02 03:36 | 7.452 | The M+ search gives each proposal's memory back to the system (record 7.452) |
-| `4a2af53` | 11-02 04:46 | 7.453 | Archive comparison seeds 1-2 complete: 102 searches, 144 confirmations, three-seed decision (record 7.453) |
-| `22744f6` | 11-02 09:00 | 7.454 | Reverse port complete: 12 runs, independent check, thesis revision 26 (record 7.454) |
-| `adcff22` | 11-02 15:45 | 7.455 | GitHub tidy-up: main level with workbench, merged Codex branch deleted on GitHub (record 7.455) |
-| `d563e24` | 11-02 16:53 | 7.456 | Pre-registrations of 2026-11-02, written before any run: the next held-out circuit for RQ5 (not run) and Amendment A3, the rehearsal arm |
-| `14ddd1b` | 11-02 18:23 | 7.456 | Amendment A3 revision 2, before any RA+R evaluation: the first queue's three zero-cost stops and runtime gator-runtime-bmr-429e3df7 |
-| `6b4a4ad` | 11-03 04:20 | 7.456 | Rehearsal arm complete, MScR experiments finished, thesis revision 30 (record 7.456) |
-| `aae3edf` | 11-03 04:26 | 7.456 | Record 7.456: thesis revision 30's second follow-up (trims, 29,911 conservative) |
-| `e778bda` | 11-04 04:18 | 7.457 | Load optional workbench panels on demand |
-| `262db32` | 11-04 04:20 | 7.458 | Compact frontend controls and release temporary Agent output |
-| `b0a780f` | 11-04 04:21 | 7.459 | Allow durable mock saves to finish in browser checks |
-| `4bd4f57` | 11-04 04:22 | 7.457–7.459 | Record lighter workbench commit history |
-| `f24423d` | 11-04 05:06 | 7.460–7.462 | Reduce startup payload and repeated frontend scans; 1,068 browser/data/unit checks pass |
-| `084cc37` | 11-04 05:06 | 7.460–7.462 | Record second frontend lightening review |
-| `97984ce` | 11-04 05:16 | 7.463–7.464 | Index frontend lookups and stream reachability evidence; 789 checks/tests pass |
-| `09eb22c` | 11-04 05:22 | 7.465–7.466 | Stream baseline evidence and guard PDK list refreshes; 91 tests/checks pass |
-| `deb264c` | 11-04 05:29 | 7.467–7.468 | Guard run brief replies and bound validation hashing; 247 tests/checks pass, 12 optional tests skip |
-| `30f766b` | 11-04 05:30 | 7.467–7.468 | Record autonomous review validation |
-| `af0f9e0` | 11-04 05:33 | 7.469 | Bound ngspice deck identity hashing; six focused fake-runner tests pass |
-| `037d0b0` | 11-04 05:34 | 7.469 | Record bounded deck hashing review |
-| `e49da39` | 11-04 07:06 | 7.470 | Bound local runtime error-tail reads; 76 local-agent tests pass |
-| `840766d` | 11-04 21:34 | 7.471 | Before landing the lightened workbench: panel errors say what failed, Copy path is text again (record 7.471) |
-| `0e16d17` | 11-04 22:08 | 7.471 | Browser checks close their windows without racing their own DevTools session (record 7.471) |
-| `7670617` | 11-04 22:30 | 7.471 | Record 7.471: Codex's lightened workbench made ready to land, with the review's fixes and the full proofs |
-| `ed669ce` | 11-04 23:22 | 7.472 | README for a public reader, with the name explained; the Agent tab easier to read (record 7.472) |
-| `6c53930` | 11-05 02:59 | 7.473 | MIT licence (record 7.473) |
+| `7e4c081` | 10-09 23:50 | 7.296 | the whole-cell read built once instead of line by line (`schematic_read.read_cell`): the same answer, 434 -> 6 ms inside Virtuoso on mscr_vco_lin_c; landed before the encoder queue's nine runs (session "Frontend workbench layout design") |
+| `9c7432b` | 10-10 16:38 | - | docs: three lines of record 7.296 say "the 180 nm process cells" |
+| `562179d` | 10-10 17:01 | 7.295 | the AgenticSizing circuits on a second 0.18 um PDK; PDK quirks and conditions from local settings (session "Encoder run plan revision") |
+| `7595aa5` | 10-10 17:01 | 7.297 | tests/test_parser.py fixture path; no test module imports a conftest (session "Refactoring plan") |
+| `687f9b2` | 10-10 17:01 | 7.298 | transferable network inputs: specs as a set, device families; digest 8f100145 (session "Agentic sizing agent circuit runs") |
+| `28979e7` | 10-10 17:01 | 7.299 | a missing value of a hard spec is a failed row; digest 94e7dd4f (session "Encoder run plan revision") |
+| `162bbeb` | 10-10 17:01 | 7.300 | the AgenticSizing circuits rebuilt from published netlists; a computed field written through its typed twin (session "Agenticsizing encoder restart and LDO comparison") |
+| `9a0f49f` | 10-10 19:43 | 7.301 | plan only: the transfer experiment (networks with the new inputs, SAC against Bayesian optimization, new targets, a second PDK, one general model on unseen circuits); the record file rolled over to `7.301-and-later.md` (session "Encoder experiment plan setup") |
+| `7b16990` | 10-10 19:43 | 7.302 | a task can be renamed: the name it is shown under; its key, files, cell, runs and models unchanged (session "Encoder experiment plan setup") |
+| `a17030a` | 10-10 17:01 | - | record only: names the commits of records 7.295 and 7.297-7.300, and the table rows for 9c7432b and the chain |
+| `fddc028` | 10-10 19:43 | - | record only: names the commits of records 7.301 and 7.302, and their table rows |
+| `07a06fb` | 10-11 20:21 | 7.303-7.316 | the transfer experiment's steps 1 and 2 with first readings; Bayesian optimization (TuRBO-1); a run binds its own copy of the bridge's settings file; a Probe that measures the sizes; the netlist comparison reads numbers (optimizer digest 94e7dd4f -> 6724e52b); a lock per Virtuoso session and per cell; offline re-scoring under several target sets; Maestro helpers removed; OCEAN closes its result folder (sessions "Encoder experiment plan setup" and "Trained model spec change topology proof") |
+| `77eaf8f` | 10-11 20:21 | - | record only: names the commit of records 7.303-7.316, and the table rows for a17030a, fddc028 and 07a06fb |
+| `1c114ca` | 10-12 00:05 | 7.317 | a second build of the network inputs: bench sources on their own scales, net tags by one rule, operating-point ratios; offline pools take them; the transfer plan's step 3b (session "Circuit training and SAC RL graph transformer", committed by the session "Model continuation and input fingerprint bugs" beneath its own records) |
+| `69f9d29` | 10-12 00:05 | 7.319 | four review findings: Continue asks for a run's view with its own component list; an offline pool pins what each source was shown; a published model keeps its component list; test variables keep their case (session "Model continuation and input fingerprint bugs") |
+| `c02917d` | 10-12 00:05 | 7.322 | five more review findings: a run continued after a crash counts what it committed after its save point; one ngspice net per node name; a relabelled copy keeps a stated scale; New run like this takes the run's optimizer; a late Delete task answer leaves a newer choice alone (session "Model continuation and input fingerprint bugs"; no browser check run) |
+| `e58dda6` | 10-12 00:05 | - | record only: names the commits of records 7.317, 7.319 and 7.322, and the table rows for 77eaf8f and the three commits |
+| `0c4af20` | 10-12 17:03 | 7.318, 7.320, 7.321, 7.323-7.332 | the transfer experiment's steps 3 to 6 and the port history; audit fixes and a refactor (model-input contracts, engine phases, ngspice helpers); CircuitGPS in the optimizer package (digest 6724e52b -> e29b39e1) with its import guards; a new model's network inputs come with its encoder's template (sessions "Encoder experiment plan setup", "Circuit training and SAC RL graph transformer", Codex "Project audit" and "Build the new encoder") |
+| `bdd7fb0` | 10-12 17:05 | - | record only: names the commit of records 7.318, 7.320, 7.321 and 7.323-7.332 in their entries |
+| `e717005` | 10-12 17:04 | - | record only: the table rows for e58dda6, 0c4af20 and bdd7fb0; five index rows name their commit |
+| `1dab5e0` | 10-12 17:51 | 7.333 | a starting size the optimizer's grid does not hold is named before a task is saved or a run is tried; workbench only (session "Encoder experiment plan setup") |
+| `7707b03` | 10-12 17:52 | - | record only: names the commit of record 7.333, and the table rows for e717005 and 1dab5e0 |
+| `1f01132` | 10-12 19:42 | 7.334, 7.335 | the published reference and system read by their reward, a correction in 7.330; the transfer experiment's full step 1 comparison, 7.313's tables and the plan's results replaced; docs only (session "Encoder experiment plan setup") |
+| `c3699ec` | 10-12 19:44 | - | record only: names the commit of records 7.334 and 7.335, corrects two statements of its message, and the table rows for 7707b03 and 1f01132 |
+| `2ee2e5c` | 10-15 02:51 | 7.336-7.352 | Round 3 archive training (GraphGPS, CircuitGPS), CircuitGPS v2 and its CPU speed-up (optimizer digest e29b39e1 -> ba551575), two Virtuoso sessions under one connection and the work sent to whichever is free, Round 2 runs, the reading guide, review fixes (the user's Codex session; session "check codex work") |
+| `acf4a93` | 10-15 02:51 | - | record only: names the commit of records 7.336-7.352, and the table rows for c3699ec and 2ee2e5c |
+| `46ad273` | 10-17 01:21 | 7.353-7.359 | Round 3 seed 0 with an RGCN arm and its session-2 recovery; Step 1's GATv2 arm; CircuitGPS version 3, opt-in (optimizer digest ba551575 -> 6ebf5ba5), its offline training and its Round 3 arms; the log rolled over (sessions "check codex work" and "Weekly experiments summary") |
+| `7e00a79` | 10-17 01:22 | - | record only: names the commit of records 7.353-7.359, and the table rows for acf4a93 and 46ad273 |
+| `484839f` | 10-17 02:28 | 7.356, 7.357 | the index rows of the two CircuitGPS version 3 records, written from their entries (their session had ended) |
+| `46854e3` | 10-17 02:38 | 7.360 | the Roadster look: dark only, red, white and black, Draft A built into the workbench (session "Frontend workbench layout design") |
+| `dd33e4f` | 10-17 02:38 | - | record only: names the commit of record 7.360, and the table rows for 7e00a79, 484839f and 46854e3 |
+| `225843d` | 10-17 05:21 | 7.361 | the Roadster look made live (page published, 8765 restarted 02:35, bringing 7.351/7.352 live); the connection pill keeps its state word (session "Frontend workbench layout design") |
+| `7d2ffb1` | 10-17 05:21 | - | record only: names the commit of record 7.361, the table rows for dd33e4f and 225843d, and 7e00a79's time corrected |
+| `358bca5` | 10-17 13:46 | 7.362 | the task's card: the task across the left and the centre, the circuit on request - the user's Option D (session "Frontend workbench layout design") |
+| `0d3fd4c` | 10-17 13:47 | - | record only: names the commit of record 7.362, and the table rows for 7d2ffb1 and 358bca5 |
+| `16170f7` | 10-19 05:08 | 7.372, 7.376, 7.380 | nine page changes; the page's words name its buttons (Save as, not "Save task"); 8765 live again after the PC restarted (session "Frontend workbench layout design") |
+| `463fe1a` | 10-19 05:09 | - | record only: names the commit of records 7.372, 7.376 and 7.380, and the table rows for 0d3fd4c and 16170f7 |
+| `bb21e4f` | 10-19 16:49 | 7.363, 7.381, 7.383 | Round 4 offline: the plan (section 7b) and its results - LOADBench does not help the Round 3 models, option 1 neither (session "Training encoders with Zenodo dataset") |
+| `0000165` | 10-19 16:49 | - | record only: names the commit of records 7.363, 7.381 and 7.383, and the table rows for 463fe1a and bb21e4f |
+| `c0b71c6` | 10-19 19:50 | 7.382 | TuRBO against transfer-learned SAC on three tasks (a trained model wins only near its training; TuRBO wins on the amplifier); TuRBO's memory growth fixed with malloc_trim after each proposal |
+| `8af6620` | 10-19 19:59 | - | record only: names the commit of record 7.382, and the table rows for 0000165 and c0b71c6 |
+| `5b7fffb` | 10-20 13:20 | 7.384 | TuRBO and transfer-learned SAC combined: neither a TuRBO-data model nor a TuRBO warm start helps; three seeds on every row (session "Zenodo dataset encoder performance") |
+| `0565306` | 10-20 13:21 | - | record only: names the commit of record 7.384, and the table rows for 8af6620 and 5b7fffb |
+| `280a571` | 10-20 14:10 | 7.364-7.371, 7.373-7.375, 7.377-7.379 | less work for the same results: streamed CSVs, projected and bounded reads, leaner inventories and ZIP exports, repeated parsing and sorting removed; the log rolled over twice (the user's Codex session) |
+| `3179340` | 10-20 14:10 | - | record only: names the commit of Codex's records 7.364-7.379, and the table rows for 0565306 and 280a571 |
+| `0970722` | 10-23 11:45 | 7.385, 7.388 | Round 3 seeds 1 and 2: the seed-0 matrix twice more, 72 real runs, two same-run resumes (7.385); all 72 complete, audited with seed 0, feasible designs per arm for seeds 0/1/2 (7.388) (session "Training encoders with Zenodo dataset") |
+| `e3ca985` | 10-23 11:45 | - | record only: names the commit of records 7.385 and 7.388, and the table rows for 3179340 and 0970722 |
+| `b6621e6` | 10-23 11:47 | 7.386, 7.387 | plan for Claude: matched-archive comparison of TuRBO transfer, Pareto MOBO and SAC (docs/plan-bo-mobo-rl-archive-comparison.md, transfer-plan section 16), refined from the random-forest calibration chat (Codex's records, committed on the user's word by the session "Training encoders with Zenodo dataset") |
+| `c5b6808` | 10-23 11:48 | - | record only: names the commit of records 7.386 and 7.387, and the table rows for e3ca985 and b6621e6 |
+| `ed57192` | 10-24 15:15 | 7.434 | archive comparison steps 2-6 (branch `bo-mobo-rl`): goal views, `turbo_archive`/`mobo` searches in the engine with exact save/continue and crash re-tell, pretrain pool settings, the goal-view rule of a comparison run; frozen runtime gator-runtime-bmr-f143d691 (session "Training encoders with Zenodo dataset") |
+| `00d0705` | 10-24 15:16 | - | plan only: the transfer experiment's journal track is dropped (user, 2026-10-23: "I am not publishing") - the status table's Journal row and sections 14-15 say J0-J5 and the manuscript milestones will not be run, kept for reference |
+| `fb04cda` | 10-24 15:19 | 7.389 | a run that stops while it is being prepared, before its save points are opened, skips its final save: the original error alone, the summary's `output.note` says why, a crash test of the unresolved-launch refusal; the log rolled over (session "Skip the final save when a run never prepared") |
+| `d4e046a` | 10-26 12:58 | 7.436 | Merge completed readability packages into latest integration |
+| `fee4da8` | 10-26 13:00 | 7.436 | Merge archive comparison implementation and preserve its development record |
+| `a10a7df` | 10-26 13:00 | 7.436 | Preserve codex/readability-before-refresh-2026-10-26 history; equivalent changes already integrated |
+| `1d355cd` | 10-26 13:00 | 7.436 | Preserve sif-backend-words-2 history; equivalent changes already integrated |
+| `2803b30` | 10-26 13:00 | 7.436 | Preserve sif-help-text history; equivalent changes already integrated |
+| `6ca0498` | 10-26 13:14 | 7.436 | Integrate pending work and remove the frontend Agent interface |
+| `4d51762` | 10-26 13:48 | 7.437 | T2-BO: document archive-comparison test helpers |
+| `a4c79ea` | 10-26 14:04 | 7.437 | P1-06: document api/models.py |
+| `fdb2eda` | 10-26 14:08 | 7.437 | P1-07: document api/run_routes.py |
+| `9202981` | 10-26 14:12 | 7.437 | P1-08: document api/settings_routes.py |
+| `1219dff` | 10-26 14:16 | 7.437 | P1-09: document Task API operations |
+| `f4362b7` | 10-26 14:20 | 7.437 | P1-10: document bayes.py |
+| `a319dab` | 10-26 14:24 | 7.437 | P1-11: document best_design.py |
+| `2bc14bb` | 10-26 14:28 | 7.437 | P1-12: document bridge_connect.py |
+| `ee286c0` | 10-26 14:32 | 7.437 | P1-13: document bridge_setup.py |
+| `bcb552c` | 10-26 14:35 | 7.437 | P1-14: document budget.py |
+| `a0335fd` | 10-26 14:39 | 7.437 | P1-15: document caches.py |
+| `7b99e6b` | 10-26 14:43 | 7.437 | P1-16: document CDF preparation ownership |
+| `9afa2bd` | 10-26 14:46 | 7.437 | P1-17: document cdf_facts.py |
+| `0c8eb12` | 10-26 14:50 | 7.437 | P1-18: document cdf_text.py |
+| `676d417` | 10-26 14:54 | 7.437 | P1-19: document cdf_write.py |
+| `3f7d90b` | 10-26 14:58 | 7.437 | P1-20: document checkpoints.py |
+| `d7fffdb` | 10-26 15:02 | 7.437 | P1-21: document Native circuit import |
+| `7db1ab4` | 10-26 15:07 | 7.437 | P1-22: document compile.py |
+| `77f5b6e` | 10-26 15:11 | 7.437 | P1-23: document connection.py |
+| `9c55885` | 10-26 15:15 | 7.437 | P1-24: document Task readiness evidence |
+| `53cb1dd` | 10-26 15:19 | 7.437 | P1-25: document corner_check.py |
+| `c6d2307` | 10-26 15:22 | 7.437 | P1-26: document deck_ops.py |
+| `ff0bf20` | 10-26 15:27 | 7.437 | P1-27: document device_models.py |
+| `e43baac` | 10-26 16:45 | 7.437 | P1-28: document diffs.py |
+| `9f8cd96` | 10-26 16:49 | 7.437 | P1-29: document Remembered directories |
+| `df1d2aa` | 10-26 16:54 | 7.437 | P1-30: document engine.py |
+| `62e7eae` | 10-26 16:59 | 7.437 | P1-31: document engine_commit.py |
+| `6c982dd` | 10-26 17:04 | 7.437 | P1-32: document Run preparation and finalization |
+| `fea8d36` | 10-26 18:25 | 7.437 | P1-33: document experiments.py |
+| `47a0be1` | 10-26 18:28 | 7.437 | P1-34: document Device vocabularies |
+| `e9575af` | 10-26 18:33 | 7.437 | P1-35: document generic_profile.py |
+| `a7892d5` | 10-26 18:36 | 7.437 | P1-36: document graph_view.py |
+| `bd37aed` | 10-26 18:41 | 7.437 | P1-37: document lanes.py |
+| `9b7b981` | 10-27 00:06 | 7.437 | P1-38: document layout.py |
+| `79555ff` | 10-27 00:11 | 7.437 | P1-39: document model_library.py |
+| `bd900cb` | 10-27 00:15 | 7.437 | P1-40: document model_scan.py |
+| `ef7fe8e` | 10-27 00:20 | 7.437 | P1-41: document model_structure.py |
+| `451a1ae` | 10-27 00:25 | 7.437 | P1-42: document modes.py |
+| `d9c967c` | 10-27 11:57 | 7.437 | P1-43: document network_inputs.py |
+| `73b7b95` | 10-27 12:02 | 7.437 | P1-44: document network_presets.py |
+| `bf7cdc8` | 10-27 12:07 | 7.437 | P1-45: document ngspice instrumentation |
+| `3aabf67` | 10-27 16:32 | 7.437 | P1-46: document ngspice_backend.py |
+| `d042d04` | 10-27 16:37 | 7.437 | P1-47: document ngspice_link.py |
+| `68da087` | 10-27 17:35 | 7.437 | P1-48: document ngspice_netlist.py |
+| `211fd6d` | 10-27 18:19 | 7.437 | P1-49: document ngspice_syntax.py |
+| `aa25aae` | 10-27 18:27 | 7.437 | P1-50: document ngspice_tasks.py |
+| `e2b091c` | 10-27 18:35 | 7.437 | P1-51: document ocean.py |
+| `19ce9f0` | 10-27 18:43 | 7.437 | P1-52: document Offline replay support |
+| `55fa2db` | 10-27 18:51 | 7.437 | P1-53: document paths.py |
+| `40899c7` | 10-27 18:59 | 7.437 | P1-54: document pdk_record.py |
+| `353448e` | 10-27 19:08 | 7.437 | P1-55: document pdk_remote.py |
+| `988cb66` | 10-27 19:16 | 7.437 | P1-56: document pretrain.py |
+| `ccd5e56` | 10-27 19:23 | 7.437 | P1-57: document Saved-task documents |
+| `54f1452` | 10-27 23:27 | 7.437 | P1-58: document psf_binary.py |
+| `5fadc4f` | 10-27 23:35 | 7.437 | P1-59: document recipes.py |
+| `c0ded4e` | 10-27 23:46 | 7.437 | P1-60: document Run ownership |
+| `afda11e` | 10-28 06:56 | 7.437 | P1-61: document runs.py |
+| `b8d0826` | 10-28 07:05 | 7.437 | P1-62: document saved_rows.py |
+| `3c40739` | 10-28 09:04 | 7.437 | P1-63: document schema.py |
+| `2ab1d1d` | 10-28 09:43 | 7.437 | P1-64: document security.py |
+| `2eb9b43` | 10-28 10:35 | 7.437 | P1-65: document session_routing.py |
+| `60c88bc` | 10-28 10:42 | 7.437 | P1-66: document simulation_artifacts.py |
+| `36c1c32` | 10-28 10:49 | 7.437 | P1-67: document spec_descriptors.py |
+| `38eedc4` | 10-28 11:35 | 7.437 | P1-68: document spec_equations.py |
+| `a45a7f3` | 10-28 11:42 | 7.437 | P1-69: document spec_programs.py |
+| `27aaa07` | 10-28 11:50 | 7.437 | P1-70: document storage/atomic.py |
+| `56cec88` | 10-28 11:58 | 7.437 | P1-71: document storage/dataset.py |
+| `535d998` | 10-28 12:09 | 7.437 | P1-72: document storage/tables.py |
+| `b9213df` | 10-28 12:17 | 7.437 | P1-73: document structures.py |
+| `9007726` | 10-28 13:02 | 7.437 | P1-74: document Task organization |
+| `c09b0a6` | 10-28 13:11 | 7.437 | P1-75: document task_registry.py |
+| `d19f69c` | 10-28 13:18 | 7.437 | P1-76: document tasks.py |
+| `369c719` | 10-28 13:28 | 7.437 | P1-77: document trajectory.py |
+| `68db890` | 10-28 13:35 | 7.437 | P1-78: document units.py |
+| `e2d1367` | 10-28 13:44 | 7.437 | P1-79: document validation.py |
+| `efebf0f` | 10-28 13:52 | 7.437 | P1-80: document virtuoso_setup.py |
+| `d69260b` | 10-28 14:03 | 7.437 | P1-81: document worker.py |
+| `e15edaa` | 10-28 14:13 | 7.437 | P1-82: document working_copy.py |
+| `9b5df16` | 10-28 14:25 | 7.437 | P1-83: document archive_compare/views.py |
+| `609598a` | 10-28 15:02 | 7.437 | P1-84: document archive_compare/mobo.py |
+| `8c09ad2` | 10-28 15:13 | 7.437 | P1-85: document archive_compare/turbo_archive.py |
+| `ccec809` | 10-28 15:30 | 7.437 | P1-86: document archive_compare/contract.py |
+| `3e23b33` | 10-28 15:44 | 7.437 | P1-87: document archive_compare/coords.py |
+| `97a43de` | 10-28 15:58 | 7.437 | P1-88: document archive_compare/runtime.py |
+| `14366fe` | 10-28 17:28 | 7.437 | P2-parse-text-outer: extract reviewed named steps |
+| `d945883` | 10-28 17:48 | 7.437 | P2-engine-commit: extract reviewed named steps |
+| `4f1dd3c` | 10-28 17:56 | 7.437 | P2-pretrain-prepare-pool: extract reviewed named steps |
+| `37c02d4` | 10-28 18:02 | 7.437 | P2-ngspice-expand: extract reviewed named steps |
+| `2d1ceb7` | 10-28 18:11 | 7.437 | P2-connection-run-layers: extract reviewed named steps |
+| `5a82fa8` | 10-28 18:33 | 7.437 | P2-ngspice-link-run-layers: extract reviewed named steps |
+| `bd3b757` | 10-28 18:42 | 7.437 | P2-virtuoso-task-routes: extract reviewed named steps |
+| `46fb35f` | 10-28 18:54 | 7.437 | P2-run-list-model-routes: extract reviewed named steps |
+| `7f9335f` | 10-28 19:27 | 7.437 | P2-task-routes: extract reviewed named steps |
+| `701201a` | 10-28 21:07 | 7.437 | TF-commit-json-test: follow the live commit step into its module in a structural test |
+| `6df01e7` | 10-28 21:18 | 7.437 | P2-task-save: extract reviewed named steps |
+| `f282930` | 10-28 21:28 | 7.437 | P2-engine-preparation: extract reviewed named steps |
+| `7462c71` | 10-28 21:38 | 7.437 | P2-structures-recognize: extract reviewed named steps |
+| `bdaceaf` | 10-28 21:47 | 7.437 | P2-profile-generate: extract reviewed named steps |
+| `7d6e140` | 10-28 22:01 | 7.437 | P2-pretrain-execute: extract reviewed named steps |
+| `f612fe1` | 10-28 22:11 | 7.437 | P2-cdf-rules: extract reviewed named steps |
+| `00cd885` | 10-28 22:35 | 7.437 | P2-runs-prepare-run: extract reviewed named steps |
+| `7bd3ef4` | 10-29 01:00 | 7.437 | P2-modes-build: extract reviewed named steps |
+| `d30fbf6` | 10-29 01:42 | 7.437 | P2-graph-view: extract reviewed named steps |
+| `300256b` | 10-29 01:55 | 7.437 | P2-pdk-record: extract reviewed named steps |
+| `fec29a7` | 10-29 02:07 | 7.437 | P2-validation-network-inputs: extract reviewed named steps |
+| `f8f13a7` | 10-29 02:18 | 7.437 | P2-checkpoints-save: extract reviewed named steps |
+| `1971be8` | 10-29 02:29 | 7.437 | P2-schema-hashed: extract reviewed named steps |
+| `4494b86` | 10-29 02:38 | 7.437 | P2-cdf-write: extract reviewed named steps |
+| `4d96a4e` | 10-29 02:45 | 7.437 | P2-summary-build: extract reviewed named steps |
+| `8264505` | 10-29 02:55 | 7.437 | P2-bridge-read-main: extract reviewed named steps |
+| `e5e786b` | 10-29 03:01 | 7.437 | P2-start-run: extract reviewed named steps |
+| `518e0d6` | 10-29 03:07 | 7.437 | P2-model-classify: extract reviewed named steps |
+| `6168ea9` | 10-29 03:14 | 7.437 | P3-calibration-scale: simplify reviewed nested control flow |
+| `8d8f681` | 10-29 03:20 | 7.437 | P3-probe-facts: simplify reviewed nested control flow |
+| `82d50c2` | 10-29 03:25 | 7.437 | P3-model-structure: simplify reviewed nested control flow |
+| `ec18302` | 10-29 03:31 | 7.437 | P3-ngspice-result: simplify reviewed nested control flow |
+| `0205252` | 10-29 03:37 | 7.437 | P3-measurement-checks: simplify reviewed nested control flow |
+| `834a497` | 10-29 03:43 | 7.437 | P3-export-cells: simplify reviewed nested control flow |
+| `f757405` | 10-29 03:48 | 7.437 | P3-token-scanner: simplify reviewed nested control flow |
+| `5e8392a` | 10-29 03:54 | 7.437 | P3-directory-bytes: simplify reviewed nested control flow |
+| `7e609f0` | 10-29 04:00 | 7.437 | P4-engine-preparation: clarify private local names |
+| `65bf9fb` | 10-29 04:06 | 7.437 | P4-schema: clarify private local names |
+| `b4f8a63` | 10-29 04:12 | 7.437 | P4-cdf-write: clarify private local names |
+| `2da8a21` | 10-29 04:18 | 7.437 | P4-consistency: clarify private local names |
+| `989dfc7` | 10-29 04:23 | 7.437 | P4-pdk-remote: clarify private local names |
+| `3511ec0` | 10-29 04:30 | 7.437 | P4-bridge-setup: clarify private local names |
+| `b90c434` | 10-29 04:36 | 7.437 | P4-cell-hold: clarify private local names |
+| `7392344` | 10-29 04:42 | 7.437 | P4-lanes: clarify private local names |
+| `db64a28` | 10-29 04:50 | 7.437 | P4-psf-binary: clarify private local names |
+| `f30480b` | 10-29 04:56 | 7.437 | P4-spec-programs: clarify private local names |
+| `3d20246` | 10-29 05:02 | 7.437 | P4-training-series: clarify private local names |
+| `04f32b0` | 10-29 05:34 | 7.437 | P4-validation: clarify private local names |
+| `e35417a` | 10-29 05:42 | 7.437 | P4-working-copy: clarify private local names |
+| `f4e768f` | 10-29 05:49 | 7.437 | P5-signature-hints: add reviewed signature type hints |
+| `0924c24` | 10-29 05:58 | 7.437 | P6-comments-constants: explain steps and name repeated constants |
+| `eec7e07` | 10-29 06:06 | 7.437 | P7-line-wrapping: wrap previously edited source to 120 columns |
+| `142f392` | 10-29 06:16 | 7.437 | P1R-docstring-revision: revise P1 docstrings after review |
+| `9e4b152` | 10-29 06:23 | 7.437 | P8-paths: name the values that steps share |
+| `2f737d6` | 10-29 12:05 | 7.437 | P8-ngspice-backend: name the values that steps share |
+| `4a9685b` | 10-29 12:11 | 7.437 | P8-ngspice-netlist: name the values that steps share |
+| `886afe5` | 10-29 12:17 | 7.437 | P8-structures: name the values that steps share |
+| `2553c59` | 10-29 12:23 | 7.437 | P8-task-save: name the values that steps share |
+| `a8074d7` | 10-29 12:29 | 7.437 | P8-graph-view: name the values that steps share |
+| `c6f6981` | 10-29 12:35 | 7.437 | P8-runs: name the values that steps share |
+| `6f1af1b` | 10-29 12:40 | 7.437 | P8-profile-generate: name the values that steps share |
+| `5906d9e` | 10-29 12:46 | 7.437 | P8-modes: name the values that steps share |
+| `83e7a47` | 10-29 12:52 | 7.437 | P8-pretrain: name the values that steps share |
+| `ea967b3` | 10-29 12:58 | 7.437 | P8-engine-commit: name the values that steps share |
+| `57d7fe4` | 10-29 13:06 | 7.437 | P8-engine-rows: name the values that steps share |
+| `4671401` | 10-29 13:12 | 7.437 | P8-runs-resume: name the values that steps share |
+| `348d247` | 10-29 13:50 | 7.437 | P8-start-directory: name the values that steps share |
+| `2d8cc63` | 10-29 13:56 | 7.437 | P8-model-scan: name the values that steps share |
+| `ab641d0` | 10-29 14:01 | 7.437 | P8-cdf-rules: name the values that steps share |
+| `c7888ab` | 10-29 14:42 | 7.390-7.433 | Records 7.390-7.433 as written in the live checkout: the readability plan, Codex's seed-0 campaign and M0, and the log rollovers |
+| `1acdebf` | 10-29 16:00 | 7.438 | Land codex/latest on workbench: the readability plan, the Agent-window removal and the archive-comparison steps (record 7.438) |
+| `ba1a858` | 10-29 16:04 | 7.438 | Record: workbench fast-forwarded to the landing merge 1acdebf (record 7.438), and its table row |
+| `def9a6a` | 10-29 16:29 | 7.439 | Model scan: a subcircuit that places itself stops at the nesting limit (record 7.439) |
+| `cb6e002` | 10-29 15:35 | 7.441 | Add local NVIDIA Agent with verified lifecycle and undoable proposals |
+| `2eb9430` | 10-29 15:43 | 7.442 | Integrate verified local Bolt 74B profile on 74B-latest |
+| `afcbca6` | 10-29 15:39 | 7.441 | Record local Agent implementation commit |
+| `bca152b` | 10-29 15:43 | 7.442 | Record verified 74B profile commit |
+| `763c0d8` | 10-29 16:34 | 7.440 | Record 7.440: live again (page built, 8765 restarted), workbench pushed, merged old branches deleted |
+| `3b90342` | 10-29 17:20 | 7.443 | Land Codex's local Agent (74B-latest) on workbench (record 7.443) |
+| `4eaabd7` | 10-30 17:53 | 7.445 | Separate private thesis repository and record authorized history purge |
+| `5652ced` | 10-30 17:54 | 7.445 | Record thesis separation commit |
+| `64d7a09` | 10-30 21:28 | - | Plans of 2026-10-30, written before any seed-1/2 or reverse-port run (Amendment A2, transfer plan Section 17, follow-up plan) |
+| `e327183` | 10-30 21:35 | 7.446, 7.447 | Shared graph/search primitives and typed editor operations (Codex's work, committed on codex/reduce-duplication) |
+| `8344241` | 10-30 21:39 | 7.446, 7.447 | Merge codex/reduce-duplication into workbench |
+| `45410a2` | 10-30 21:39 | 7.448 | Record 7.448: Codex's reduce-duplication work merged into workbench |
+| `be46c54` | 10-30 23:01 | 7.449 | Amendment A1's M0 code on workbench, as it ran (record 7.449) |
+| `464d7b7` | 10-31 00:52 | 7.450, 7.451 | After a crash only an M0 search reads the event log (record 7.451); record 7.450 (seeds 1-2 launch) |
+| `078c929` | 11-02 03:36 | 7.452 | The M+ search gives each proposal's memory back to the system (record 7.452) |
+| `018bf9b` | 11-02 04:46 | 7.453 | Archive comparison seeds 1-2 complete: 102 searches, 144 confirmations, three-seed decision (record 7.453) |
+| `a6e15a0` | 11-02 09:00 | 7.454 | Reverse port complete: 12 runs, independent check, thesis revision 26 (record 7.454) |
+| `eae481d` | 11-02 15:45 | 7.455 | GitHub tidy-up: main level with workbench, merged Codex branch deleted on GitHub (record 7.455) |
+| `ca9207d` | 11-02 16:53 | 7.456 | Pre-registrations of 2026-11-02, written before any run: the next held-out circuit for RQ5 (not run) and Amendment A3, the rehearsal arm |
+| `05fc9c8` | 11-02 18:23 | 7.456 | Amendment A3 revision 2, before any RA+R evaluation: the first queue's three zero-cost stops and runtime gator-runtime-bmr-429e3df7 |
+| `aaffd7a` | 11-03 04:20 | 7.456 | Rehearsal arm complete, MScR experiments finished, thesis revision 30 (record 7.456) |
+| `96a74eb` | 11-03 04:26 | 7.456 | Record 7.456: thesis revision 30's second follow-up (trims, 29,911 conservative) |
+| `3ede93a` | 11-04 04:18 | 7.457 | Load optional workbench panels on demand |
+| `6c5423b` | 11-04 04:20 | 7.458 | Compact frontend controls and release temporary Agent output |
+| `cdb98cc` | 11-04 04:21 | 7.459 | Allow durable mock saves to finish in browser checks |
+| `26fe077` | 11-04 04:22 | 7.457–7.459 | Record lighter workbench commit history |
+| `fef536e` | 11-04 05:06 | 7.460–7.462 | Reduce startup payload and repeated frontend scans; 1,068 browser/data/unit checks pass |
+| `06726ab` | 11-04 05:06 | 7.460–7.462 | Record second frontend lightening review |
+| `ce1faba` | 11-04 05:16 | 7.463–7.464 | Index frontend lookups and stream reachability evidence; 789 checks/tests pass |
+| `59824fb` | 11-04 05:22 | 7.465–7.466 | Stream baseline evidence and guard PDK list refreshes; 91 tests/checks pass |
+| `160e6ec` | 11-04 05:29 | 7.467–7.468 | Guard run brief replies and bound validation hashing; 247 tests/checks pass, 12 optional tests skip |
+| `368401e` | 11-04 05:30 | 7.467–7.468 | Record autonomous review validation |
+| `f9734ef` | 11-04 05:33 | 7.469 | Bound ngspice deck identity hashing; six focused fake-runner tests pass |
+| `dc05dc9` | 11-04 05:34 | 7.469 | Record bounded deck hashing review |
+| `4a8553f` | 11-04 07:06 | 7.470 | Bound local runtime error-tail reads; 76 local-agent tests pass |
+| `2d79ae1` | 11-04 21:34 | 7.471 | Before landing the lightened workbench: panel errors say what failed, Copy path is text again (record 7.471) |
+| `f903250` | 11-04 22:08 | 7.471 | Browser checks close their windows without racing their own DevTools session (record 7.471) |
+| `8f92004` | 11-04 22:30 | 7.471 | Record 7.471: Codex's lightened workbench made ready to land, with the review's fixes and the full proofs |
+| `189a6e6` | 11-04 23:22 | 7.472 | README for a public reader, with the name explained; the Agent tab easier to read (record 7.472) |
+| `b3e7ca7` | 11-05 02:59 | 7.473 | MIT licence (record 7.473) |

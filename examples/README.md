@@ -1,7 +1,7 @@
 # Example scripts
 
 These 46 Python files are research entry points and support modules, not a startup sequence for the workbench.
-The table describes source at `a82f950` (2026-10-25); it does not report a fresh execution or authorize a simulation.
+The table describes source at `18fe81e` (2026-10-25); it does not report a fresh execution or authorize a simulation.
 For the browser workflow, use [the workbench reference](../docs/workbench.md).
 
 Every existing Python file here is protected during the readability work. A **pinned: never edit** label identifies

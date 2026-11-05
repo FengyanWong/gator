@@ -2,7 +2,7 @@
 
 The `analog_optimizer` package provides circuit graphs, legal parameter actions, simulator adapters and graph SAC.
 The browser and its saved-task workflow live in the separate [workbench](workbench.md).
-These contracts describe the source at the readability plan's base, `a82f950` (2026-10-25).
+These contracts describe the source at the readability plan's base, `18fe81e` (2026-10-25).
 
 ## Package map
 

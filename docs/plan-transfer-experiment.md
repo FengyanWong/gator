@@ -1184,7 +1184,7 @@ above its Round 3 model's goes online only on the user's word.
 
 - Round 3's seed-0 arms copied in every setting (RING3 `real:mscr_ring3`, relaxed LDO1 `real:graphgps_ldo1`, DFFRX1
   `real:dffrx1_t2`, the published amplifier's far start `real:agentic_fc_pub_far`); only the model changes. Each arm
-  runs on the runtime its Round 3 twin used (`gator-runtime-f8ff5ce` for RGCN and GraphGPS, `gator-runtime-7356r`
+  runs on the runtime its Round 3 twin used (`gator-runtime-acf4a93` for RGCN and GraphGPS, `gator-runtime-7356r`
   for CircuitGPS v3), so that only the weights differ.
 - Per encoder and task: frozen (300 sampled designs) and adapt (800, fine-tune) from the Round 4 model. Scratch is not
   repeated: Round 3's scratch arms are the same task, start, seed and settings with no model at all.

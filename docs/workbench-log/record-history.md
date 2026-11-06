@@ -749,3 +749,5 @@ One row per commit, newest last.
 | `1ce75cd` | 11-05 15:30 | 7.476 | Record 7.476: record 7.475 pushed and checked on the public page; the README's diagram replaced by a picture |
 | `13f7880` | 11-05 21:36 | 7.477 | Reading guide: the first diagram top to bottom, so GitHub draws it at full size and clear of its buttons (record 7.477) |
 | `cd73335` | 11-05 21:39 | 7.477 | Record 7.477: the reading guide's first diagram top to bottom, measured in GitHub's viewer |
+| `1759f29` | 11-05 21:42 | 7.477 | Record 7.477, part 2: record 7.476 was pushed meanwhile (20:54 GMT), and the entry says so |
+| `e303b33` | 11-06 01:08 | 7.478 | Connection: the session lock answers whether a run works on it; the run list finds its folders 16 at a time (record 7.478) |

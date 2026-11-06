@@ -553,3 +553,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.477 | The reading guide's first diagram top to bottom, one line per box: full-size text on GitHub, clear of its buttons |
 | 7.478 | A connection test no longer waits for the run list: the lock of the connection's Virtuoso session answers whether a run works on it, and the runs are looked at only while that lock is held (826 runs: 9-11 s a test, now the test itself); the run list finds its folders 16 at a time (a list in 1.25 s where it took 6 s) |
 | 7.479 | A connection can say `"license_check": false`: its license server is not asked, and a real start no longer asks twice; the record log rolled over; records 7.477 and 7.478 pushed |
+| 7.480 | The README rewritten for a human reader: shorter sentences, words explained where they first appear, steps and tables; no fact, number or link lost; record 7.479 pushed |

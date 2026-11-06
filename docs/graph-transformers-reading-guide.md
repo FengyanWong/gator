@@ -11,7 +11,13 @@ This guide follows GATOR's implementation from inputs to training. It assumes fa
 Suppose an amplifier has insufficient gain while already meeting its power limit. The network receives the circuit graph, present sizes, available operating points, specification values and targets. Its job is to propose another legal set of sizes that may improve the result.
 
 ```mermaid
-flowchart LR
+---
+config:
+  flowchart:
+    wrappingWidth: 320
+---
+flowchart TD
+    %% Top to bottom, one line per box. As a row of nine, GitHub drew it small with its own buttons over the last box.
     O["Circuit, sizes, measurements and goals"] --> E["Graph encoder"]
     E --> P["Parameter-group embeddings"]
     P --> A["Actor: a distribution for each active group"]

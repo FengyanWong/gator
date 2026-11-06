@@ -253,18 +253,22 @@ def _subfolders(path, *, experiments: bool=False) -> list[str]:
         return []
 
 
-def find_runs(data_root, *, manifest: bool=True) -> list[Path]:
+def find_runs(data_root, *, manifest: bool=True, many=None) -> list[Path]:
     """Every run directory (has run_manifest.json) under a data root: <experiment with '__'>/runs/<task>/<run>.
 
     Walked with os.scandir rather than glob (record 7.274): on the 9p-mounted D: drive each file operation costs
     milliseconds, and glob also stat'ed runs/ and every run's manifest. `manifest=False` leaves out that last check, for a
-    caller that reads the manifest anyway and skips a folder without one (runs.list_runs)."""
-    found = []
-    for experiment in _subfolders(data_root, experiments=True):
-        for task in _subfolders(os.path.join(experiment, 'runs')):
-            found += [Path(run) for run in _subfolders(task) if not manifest or os.path.isfile(os.path.join(run,
-                'run_manifest.json'))]
-    return sorted(found)
+    caller that reads the manifest anyway and skips a folder without one (runs.list_runs).
+    `many(read, items)`: reads several experiment folders at a time (run_index.read_many, record 7.478). One after
+    another, the two folder listings of each run had become the larger part of a list of 826 runs: it read in about
+    6 s, and reads in about 1.25 s with the listings 16 at a time. The runs found and their order are the same either
+    way."""
+    def runs_of(experiment) -> list[Path]:
+        return [Path(run) for task in _subfolders(os.path.join(experiment, 'runs')) for run in _subfolders(task)
+                if not manifest or os.path.isfile(os.path.join(run, 'run_manifest.json'))]
+    experiments = _subfolders(data_root, experiments=True)
+    groups = many(runs_of, experiments) if many is not None else map(runs_of, experiments)
+    return sorted(run for group in groups for run in group)
 
 
 def read_run(run_dir, *, status: bool=True) -> dict:

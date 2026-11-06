@@ -9,12 +9,13 @@ import threading
 import time
 
 import pytest
+from fastapi.testclient import TestClient
 
-from gator_workbench import connection, runs, tasks
+from gator_workbench import connection, consistency, paths, runs, tasks
 from gator_workbench.connection import ConnectionMonitor, LAYERS, run_layers
 from gator_workbench.storage.atomic import read_jsonl
 from helpers import bridge_settings as settings, execute, make_config, roots_for, rows, summary, workbench_app   # noqa: F401 - an imported fixture belongs to this module
-from fakes_connection import FakeBridge, OK_BODY, layers_json, monitor_for, reasons, states
+from fakes_connection import FakeBridge, OK_BODY, fake_probe, layers_json, monitor_for, reasons, states, write_profiles
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -437,3 +438,111 @@ def test_one_look_for_a_working_run_serves_the_gate_for_three_seconds(tmp_path, 
     assert lookup('other') is None and len(looks) == 2                      # each connection has its own answer
     monkeypatch.setattr(app_module, 'ACTIVE_RUN_REUSE_SECONDS', 0.0)
     assert lookup('lab') is None and len(looks) == 3
+
+
+# ---- the session lock is asked first (record 7.478) ---------------------------------------------------------------------
+SESSIONS_ENV = ('VB_REMOTE_HOST=simhost\nVB_REMOTE_PORT=65001\nVB_LOCAL_PORT=65221\n'
+                'VB_REMOTE_HOST_s2=simhost\nVB_REMOTE_PORT_s2=65017\nVB_LOCAL_PORT_s2=65222\n')
+
+
+def two_sessions(tmp_path):
+    """`lab` reaches the first Virtuoso session and `lab2` the second; `sim` is an ngspice connection and `bare` a Virtuoso
+    connection without a bridge settings file. Returns the settings file and the two sessions' locks."""
+    env = tmp_path / 'sessions.env'
+    env.write_text(SESSIONS_ENV)
+    write_profiles(lab=dict(env_file=str(env)), lab2=dict(env_file=str(env), kind='virtuoso_ssh', profile='s2', session_group='lab'),
+                   sim=dict(kind='ngspice_local'), bare=dict(kind='virtuoso_ssh'))
+    first, second = paths.bridge_session_lock(str(env)), paths.bridge_session_lock(str(env), 's2')
+    assert first != second
+    return env, first, second
+
+
+def held(lock):
+    """`lock` held by this process, as a run holds its session's, until the stream is closed."""
+    Path(lock).parent.mkdir(parents=True, exist_ok=True)
+    stream = open(lock, 'a+')
+    fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return stream
+
+
+def counted_looks(monkeypatch, found=()):
+    """Every look at the run list from here on is counted; it finds the runs `found`."""
+    looks = []
+    monkeypatch.setattr(runs, 'list_runs', lambda roots, *args, **kwargs: looks.append(1) or list(found))
+    return looks
+
+
+def test_a_free_session_lock_answers_for_a_working_run_without_a_look_at_the_runs(tmp_path, monkeypatch):
+    """Every connection test, check and gate began with a look at the run list for a run that works on the connection:
+    5-10 s on the D: drive once 826 runs were under the output root, for a test of 0.7 s. Every real run holds the lock
+    of the Virtuoso session it works in, so a lock that nobody holds answers at once. While it is held the runs are
+    looked at, as before; each session has its own lock."""
+    _, first, second = two_sessions(tmp_path)
+    looks = counted_looks(monkeypatch)
+    app = workbench_app(tmp_path)
+    lookup = app.state.monitor.active_run_lookup
+    assert lookup('lab') is None and lookup('lab2') is None and looks == []        # no lock file: never taken
+    first.parent.mkdir(parents=True, exist_ok=True)
+    first.touch()
+    assert lookup('lab') is None and looks == []                                    # a lock file nobody holds
+    stream = held(first)
+    try:
+        assert lookup('lab') is None and len(looks) == 1                            # held: the look, as before
+        assert lookup('lab') is None and len(looks) == 1                            # ... which serves for three seconds
+        assert lookup('lab2') is None and len(looks) == 1                           # the second session is free
+    finally:
+        stream.close()
+    assert lookup('lab') is None and len(looks) == 1                                # free again: no look
+    stream = held(second)
+    try:
+        assert lookup('lab') is None and len(looks) == 1 and lookup('lab2') is None and len(looks) == 2
+    finally:
+        stream.close()
+    # The page's own request: a connection test through the API reads no run list either.
+    app.state.monitor.probe_command = fake_probe(tmp_path, OK_BODY)
+    answer = TestClient(app).post('/api/connection/check', json=dict(profile_id='lab', scope='interactive', trigger='user'))
+    assert answer.status_code == 200 and answer.json()['overall'] == 'ok' and answer.json()['run_active'] is False
+    assert len(looks) == 2 and app.state.monitor.probes_started == 1
+
+
+def test_a_held_session_lock_finds_the_run_and_a_free_one_forgets_it(tmp_path, monkeypatch):
+    _, first, _ = two_sessions(tmp_path)
+    working = dict(worker_alive=True, connection_profile_id='lab', last_successful_evaluation_utc='2026-11-06T00:00:00+00:00')
+    looks = counted_looks(monkeypatch, found=[dict(run_dir='a-run')])
+    monkeypatch.setattr(runs, 'run_status', lambda run_dir: working)
+    app = workbench_app(tmp_path)
+    lookup = app.state.monitor.active_run_lookup
+    app.state.monitor.probe_command = fake_probe(tmp_path, OK_BODY)
+    stream = held(first)
+    try:
+        assert lookup('lab') == working and len(looks) == 1
+        checked = app.state.monitor.check('lab', scope='interactive', trigger='user')
+        assert checked['run_active'] is True and checked['last_successful_bridge_interaction_utc'] == working['last_successful_evaluation_utc']
+        assert len(looks) == 1                                                      # within the look's three seconds
+    finally:
+        stream.close()
+    # The lock is free within those three seconds: what the look found has ended, and is not answered again.
+    assert lookup('lab') is None and len(looks) == 1
+    assert app.state.monitor.check('lab', scope='interactive', trigger='user')['run_active'] is False
+
+
+@pytest.mark.parametrize('profile_id', ['sim', 'bare', 'not-set-up'])
+def test_a_connection_with_no_session_lock_to_ask_gets_the_look_at_the_runs(tmp_path, monkeypatch, profile_id):
+    """An ngspice run takes no session lock, a Virtuoso connection without a bridge settings file has none that could
+    be named, and a name that is not set up has nothing: the runs are looked at, as before."""
+    two_sessions(tmp_path)
+    looks = counted_looks(monkeypatch)
+    assert workbench_app(tmp_path).state.monitor.active_run_lookup(profile_id) is None and len(looks) == 1
+
+
+def test_where_the_locks_cannot_be_read_the_runs_are_looked_at(tmp_path, monkeypatch):
+    from gator_workbench.api import app as app_module
+    two_sessions(tmp_path)
+    looks = counted_looks(monkeypatch)
+    monkeypatch.setattr(app_module, 'ACTIVE_RUN_REUSE_SECONDS', 0.0)
+    lookup = workbench_app(tmp_path).state.monitor.active_run_lookup
+    monkeypatch.setattr(consistency, 'lock_pids', lambda path: None)                # no /proc/locks: not Linux
+    assert lookup('lab') is None and len(looks) == 1
+    monkeypatch.setattr(consistency, 'lock_pids', lambda path: 1 / 0)               # the shortcut never fails the check
+    assert lookup('lab') is None and len(looks) == 2
+    assert app_module.session_idle('lab') is False and app_module.session_idle(None) is False

@@ -159,7 +159,9 @@ def _resumability(run_dir, summary, point=None, manifest=None):
 # changed in place by another tool is seen then (an entry was read again after 10 minutes too until record 7.279: all
 # of them expired together, and the saved models took 12.9 s again every 10 minutes).
 # The reads of a request go through a pool of READ_THREADS threads (record 7.279): on the 9p mount the file operations
-# of many folders overlap well (16 at once: a stat 5-8 ms -> 0.2-0.5 ms each).
+# of many folders overlap well (16 at once: a stat 5-8 ms -> 0.2-0.5 ms each). So does the walk that finds the run
+# folders, since record 7.478 (layout.find_runs, `many`): it went one folder after another and had become the larger
+# half of a list of 826 runs.
 # The API answers several requests at once (FastAPI runs these routes on a thread pool), so the dict itself is read,
 # written and walked under _RUN_CACHE_LOCK only; the file reads stay outside it (record 7.278: two lists at once could
 # end in "dictionary changed size during iteration" while one let go of entries and the other added some).
@@ -243,7 +245,7 @@ def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True, fresh=
     for data_root, mock in ((root, False), (root / 'mock', True)):
         if mock and not include_mock:
             continue
-        found = find_runs(data_root, manifest=False)
+        found = find_runs(data_root, manifest=False, many=read_many)
         for run_dir, facts in zip(found, read_many(lambda run_dir: run_facts(run_dir, fresh=fresh), found)):
             if facts is None:
                 continue
@@ -291,7 +293,7 @@ def model_label_rows(output_root) -> list[dict]:
     cache (record 7.274): a rename or a new run changes its folder, so the cache never holds an old name."""
     rows = []
     for data_root in (Path(output_root), Path(output_root) / 'mock'):
-        found = find_runs(data_root, manifest=False)
+        found = find_runs(data_root, manifest=False, many=read_many)
         for run_dir, facts in zip(found, read_many(run_facts, found)):
             if facts is not None:
                 rows.append(dict(run_dir=str(run_dir), created_utc=facts['manifest'].get('created_utc'), **facts['label']))

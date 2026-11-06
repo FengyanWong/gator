@@ -20,7 +20,7 @@ These contracts describe the source at the readability plan's base, `18fe81e` (2
 | `recording/` | SQLite records, static assets, dynamic transitions, capacity control, checkpoints, queries and exports. |
 
 The parser, graph data classes and `MockBackend` use the standard library. PyG and learning dependencies are optional;
-the [installation instructions](../README.md#start) install the extras needed by the workbench and its tests.
+the [installation instructions](../README.md#install-and-run) install the extras needed by the workbench and its tests.
 The four [synthetic netlists](../tests/fixtures/synthetic/) exercise the same parser. Evidence-pinned configurations,
 example scripts and fixtures must not be edited, moved or reformatted; see [CLAUDE.md](../CLAUDE.md).
 

@@ -192,6 +192,29 @@ def test_a_busy_virtuoso_is_named_and_the_task_is_not_blamed(tmp_path, monkeypat
     assert consistency.lock_holder(lock) is None
 
 
+def test_the_processes_that_hold_a_lock_are_listed_without_taking_it(tmp_path, monkeypatch):
+    """Record 7.478: the connection gate asks whether anything holds a Virtuoso session's lock before it looks at the run
+    list. The answer tells "nobody" ([]) from "cannot be said here" (None), which `lock_holder` gives as one None."""
+    import fcntl
+    import os
+    from pathlib import Path
+    lock = tmp_path / 'session.lock'
+    assert consistency.lock_pids(lock) == []                                    # never made: nobody can hold it
+    lock.touch()
+    assert consistency.lock_pids(lock) == []
+    with open(lock, 'a+') as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert consistency.lock_pids(lock) == [os.getpid()]
+        assert f'(process {os.getpid()}, started ' in consistency.lock_holder(lock)
+        fcntl.flock(stream, fcntl.LOCK_UN)                                      # asking took nothing: it is ours to let go
+        assert consistency.lock_pids(lock) == []
+    assert consistency.lock_pids(lock / 'below-a-file') is None                 # cannot be looked at
+    read_text = Path.read_text
+    monkeypatch.setattr(Path, 'read_text', lambda self, *args, **kwargs: (_ for _ in ()).throw(OSError('no /proc here'))
+                        if str(self) == '/proc/locks' else read_text(self, *args, **kwargs))
+    assert consistency.lock_pids(lock) is None and consistency.lock_holder(lock) is None      # not Linux
+
+
 def test_the_check_route_replaces_check_against_virtuoso(tmp_path, monkeypatch):
     cfg = saved_ring(tmp_path)
     monkeypatch.setattr(profile_preflight, 'preflight', lambda monitor, name, profile_id, **kw: dict(profile_preflight=True, ok=True, steps=OK_STEPS))

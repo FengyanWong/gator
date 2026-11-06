@@ -112,6 +112,35 @@ def test_find_runs_finds_what_the_glob_found(tmp_path):
     assert find_runs(tmp_path) == glob and len(glob) == 4
     assert set(find_runs(tmp_path, manifest=False)) == set(glob) | {tmp_path / 'exp__a/runs/t/r2'}
     assert find_runs(tmp_path / 'missing') == [] and find_runs(tmp_path / 'exp__a' / 'runs' / 'stray.txt') == []
+    # several experiment folders at a time (record 7.478): the same runs in the same order
+    assert find_runs(tmp_path, many=run_index.read_many) == glob
+    assert find_runs(tmp_path, manifest=False, many=run_index.read_many) == find_runs(tmp_path, manifest=False)
+    assert find_runs(tmp_path / 'missing', many=run_index.read_many) == []
+
+
+def test_the_run_list_walks_several_experiment_folders_at_a_time(tmp_path, monkeypatch):
+    """Record 7.478: with 826 runs under the output root, the walk that finds the run folders - two folder listings a
+    run, one after another on the 9p-mounted D: drive - had become the larger part of the run list's 6 s. The listings
+    of the experiment folders go through the read pool now, 16 at a time (a list in 1.25 s); the root is listed once,
+    by the caller."""
+    for name, experiment in (('one', 'exp__a'), ('two', 'exp__b'), ('three', 'exp__c')):
+        run = tmp_path / experiment / 'runs' / 'task' / name
+        run.mkdir(parents=True)
+        write_json(run / 'run_manifest.json', dict(run_id=name, created_utc='2026-11-06T00:00:00+00:00', mock=False,
+                                                   experiment_name='exp', experiment_id=experiment[-1], task_name='task'))
+        write_json(run / 'status.json', dict(state='completed'))
+        write_json(run / 'run_summary.json', dict(output=dict(resumability='full_state')))
+    listed = []
+    subfolders = layout_module._subfolders
+    monkeypatch.setattr(layout_module, '_subfolders', lambda path, **kwargs: listed.append(
+        (os.path.relpath(path, tmp_path), threading.current_thread().name)) or subfolders(path, **kwargs))
+    assert sorted(row['run_id'] for row in runs.list_runs(roots_for(tmp_path), tmp_path, include_mock=False)) == ['one', 'three', 'two']
+    pooled = sorted(path for path, thread in listed if thread.startswith('gator-run-read'))
+    assert pooled == ['exp__a/runs', 'exp__a/runs/task', 'exp__b/runs', 'exp__b/runs/task', 'exp__c/runs', 'exp__c/runs/task']
+    assert [path for path, thread in listed if not thread.startswith('gator-run-read')] == ['.']
+    listed.clear()
+    assert len(runs.model_label_rows(tmp_path)) == 3                             # the model names' lean rows: the same walk
+    assert len([path for path, thread in listed if thread.startswith('gator-run-read')]) == 6
 
 
 # ---- the per-run cache ---------------------------------------------------------------------------------------------
@@ -324,6 +353,13 @@ def test_the_source_digest_is_hashed_again_in_a_thread_once_known(monkeypatch):
         if value == 'second':
             release.wait(5)
         return value
+    # A refresh that the test before started - its last run list, when this process's digest was over 30 s old - hashes
+    # the real sources in a thread. It has to end before this test puts its own state in place, or its answer lands there
+    # (record 7.478: one failure in a full run on a busy machine; the code from before that record does the same).
+    for _ in range(1000):
+        if not run_index._SOURCE_DIGEST['refreshing']:
+            break
+        time.sleep(0.01)
     monkeypatch.setattr(sac, 'source_digest', digest)
     monkeypatch.setattr(run_index, '_SOURCE_DIGEST', dict(value=None, at=0.0, refreshing=False))
     assert run_index.current_source_digest() == 'first'                         # the first one: hashed at once

@@ -1465,6 +1465,18 @@ Whether a run is working on the connection (the third condition) is asked only f
 one answer serves 3 s (record 7.279): the look reads the run list and up to 20 status files on the D: drive, 1-2.4 s,
 and it was asked first, at every gate - about ten times in one Save task.
 
+Since record 7.478 the question goes to the lock of the connection's Virtuoso session before any run is looked at.
+Every real run, corner check and task save holds that lock for as long as it works in the session, so while nobody
+holds it no run works on the connection, and that is the answer at once: one read of `/proc/locks`, without taking
+the lock. The look had grown with the run list. With 826 runs under the output root it took 5-10 s, and 12-26 s
+after a start of the backend, and every connection test, check and gate began with it - the test the page makes
+when it opens too - where the test itself takes 0.7 s. The backend's log of its checks never showed that: it times
+a test after the look. A connection test now takes about as long as the test itself. The runs are still looked at
+while the lock is held (the answer then names the run, and serves 3 s as before) and where there is no such lock to
+ask: an ngspice connection, a Virtuoso connection without a bridge settings file, a machine without `/proc/locks`.
+One thing differs: a run whose worker has started but does not hold the session lock yet is not yet a run that
+works on the connection. It has not contacted Virtuoso yet either.
+
 ### Connecting from the panel (added 2026-09-20, user request)
 
 The left panel walks through the three steps of bringing the link up:
@@ -1921,7 +1933,10 @@ lists every run under the output folder, newest first, one row per run:
   works is looked at every time. Nothing expires by age any more (record 7.279: every entry expired together after ten
   minutes, and the saved models took 12.9 s again). **Refresh list** reads every run folder anew
   (`GET /api/runs?fresh=true`), for a file another tool edited in place. The runs are read 16 at a time (record 7.279:
-  file operations on the D: drive overlap well), the first read after a backend start too. The backend answers several
+  file operations on the D: drive overlap well), the first read after a backend start too. The folders that hold
+  them are found 16 at a time as well (record 7.478): the walk - two folder listings a run, one after another - had
+  become the larger part of a list of 826 runs, which now reads in about 1.25 s where it took about 6 s (the first
+  read after a backend start: 6.5 s where it took 11-14 s). The backend answers several
   requests at once, so the cache is touched under a lock (record 7.278).
 * The times come from the run's own files (`run_manifest.json` segments, `status.json`); `GET /api/runs` carries them
   as `started_utc`, `ended_utc`, `last_seen_utc`, `active_seconds`, `paused_seconds`, `segments`. A workbench server

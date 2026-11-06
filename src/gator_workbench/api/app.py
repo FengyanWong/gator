@@ -8,9 +8,9 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from .. import __version__, bridge_connect, connection, launch_requests, runs
+from .. import __version__, bridge_connect, connection, consistency, launch_requests, runs
 from ..names import LOOPBACK_HOSTS
-from ..paths import OutputRoots, repo_root
+from ..paths import OutputRoots, bridge_session_lock, repo_root
 from ..preload import preload
 from ..security import redact
 from .context import ApiContext
@@ -32,6 +32,23 @@ def trusted_hosts(host=None) -> list[str]:
     # browsers send a name in lower case
     names = [*LOOPBACK_HOSTS, 'testserver'] + ([host, host.lower()] if host else [])
     return list(dict.fromkeys(f'[{name}]' if ':' in name else name for name in names))
+
+
+def session_idle(profile_id) -> bool:
+    """Whether it is certain that nothing works in the Virtuoso session that connection `profile_id` reaches: no
+    process holds that session's lock, which every real run, corner check and task save holds for as long as it works
+    there (records 7.167, 7.311). One look at /proc/locks: the lock is not taken, and no run folder is read. False
+    whenever that cannot be said - a name that is not set up, a connection that is no Virtuoso connection with a bridge
+    settings file (an ngspice run takes no such lock), a machine without /proc/locks - and the caller looks at the runs
+    themselves."""
+    try:
+        settings = connection.load_profiles()['profiles'].get(profile_id)
+        if (not isinstance(settings, dict) or connection.entry_kind(settings) not in connection.SESSION_KINDS
+                or not settings.get('env_file')):
+            return False
+        return consistency.lock_pids(bridge_session_lock(settings['env_file'], settings.get('profile'))) == []
+    except Exception:                          # a shortcut must never fail the check it shortens
+        return False
 
 
 def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=True, monitor=None,
@@ -56,9 +73,16 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     # The connection gate asks this at every check, and Save task checks about ten times in a row. One look serves for
     # ACTIVE_RUN_REUSE_SECONDS (record 7.279): the look - the run list and up to 20 status files on the D: drive - took
     # 1-2.4 s, so its answer was about that old when it came anyway.
+    # The lock of the connection's Virtuoso session is asked first (record 7.478): while nothing holds it, no run works
+    # on the connection, and that is the answer at once. The look had grown with the run list - 826 runs: 5-10 s, and
+    # 12-26 s after a start of the backend - and every connection test, check and gate began with it, where the test
+    # itself takes 0.7 s. The runs are looked at only while the lock is held, or where there is no such lock to ask.
     looked: dict = {}
 
     def active_run(profile_id):
+        if session_idle(profile_id):
+            looked.pop(profile_id, None)                 # whatever an earlier look found there has ended
+            return None
         seen = looked.get(profile_id)
         if seen is not None and time.monotonic() - seen[0] < ACTIVE_RUN_REUSE_SECONDS:
             return seen[1]

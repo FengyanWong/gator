@@ -96,6 +96,30 @@ def _gate_step(exc) -> dict:
         fix='Bring the link up in the Connection window, then check again.')
 
 
+def lock_pids(path) -> list | None:
+    """The processes that hold the flock on `path`, read from /proc/locks WITHOUT taking the lock (see `lock_holder`,
+    which names the first of them): [] when nobody holds it or the file was never made; None when that cannot be said
+    here - the file cannot be looked at, or there is no /proc/locks (not Linux). A holder is listed with the file's
+    device and inode on the WSL disk ("FLOCK") and on a Windows drive ("POSIX") alike (tried 2026-11-06, record
+    7.478)."""
+    import os
+    from pathlib import Path
+    try:
+        stat = Path(path).stat()
+    except FileNotFoundError:
+        return []
+    except OSError:
+        return None
+    key = f'{os.major(stat.st_dev):02x}:{os.minor(stat.st_dev):02x}:{stat.st_ino}'
+    try:
+        # "19: FLOCK  ADVISORY  WRITE 3034112 08:30:143825 0 EOF"; a process waiting for the lock has "->" before its
+        # type
+        return [int(f[f.index(key) - 1]) for f in map(str.split,
+            Path('/proc/locks').read_text().splitlines()) if key in f and '->' not in f]
+    except (OSError, ValueError, IndexError):
+        return None
+
+
 def lock_holder(path) -> str | None:
     """Who holds the flock on `path` (the run adapter's session lock), read from /proc/locks WITHOUT taking the lock: a
     probe that took it, even shared, would make a real run that connects at that moment fail. "a run started from a
@@ -105,12 +129,7 @@ def lock_holder(path) -> str | None:
     from pathlib import Path
     process_file = lambda pid, part: Path(f'/proc/{pid}/{part}')
     try:
-        stat = Path(path).stat()
-        key = f'{os.major(stat.st_dev):02x}:{os.minor(stat.st_dev):02x}:{stat.st_ino}'
-        # "19: FLOCK  ADVISORY  WRITE 3034112 08:30:143825 0 EOF"; a process waiting for the lock has "->" before its
-        # type
-        pids = [int(f[f.index(key) - 1]) for f in map(str.split,
-            Path('/proc/locks').read_text().splitlines()) if key in f and '->' not in f]
+        pids = lock_pids(path)
         if not pids:
             return None
         pid = pids[0]

@@ -1452,6 +1452,19 @@ runs in a short-lived process with the same interpreter and environment as a run
 the broken layer, and never starts, restarts or stops the tunnel, the daemon or Virtuoso.
 Results go to `configs/local/workbench/connection_checks.jsonl`, never into research tables.
 
+**The license part, and `"license_check": false` (record 7.479).** The full test and the gate before a real run ask
+the bridge's license check for free Spectre seats. That check returns only the lines of licenses that are in use at
+that moment. Where the licenses are uncounted, where no Spectre license is in use just then, or where the simulator
+host has no `lmstat`, it reads nothing: the license part is `unknown`, and a real start from the page is refused
+once, asks whether to go ahead, and is then tested in full a second time - at every start. A Virtuoso connection
+whose license server never gives a seat count can say so in its entry of the connection file, set by hand:
+`"license_check": false` (each further session of a connection has an entry of its own). The license part of that
+connection is then `n/a` ("license not asked"): the full test passes without it and says that the license server
+is not asked, and a start neither waits for it nor asks about it. Spectre itself is looked for as before, and a
+missing Spectre still stops the start. Only the value `false` switches the question off. What is given up is the
+one thing the snapshot can report, that every seat is taken: a simulation that gets no seat then fails in its own
+words, and the run's stop after repeated infrastructure failures ends it.
+
 The check guarding a cell read or write (the gate before an import, a Save task or a Check now) reuses a passing check
 of the same connection from the last 30 s instead of testing again (status record 7.115). Before, a single Save task
 tested the connection two or three times, about 0.9 s each. Conditions for the reuse:

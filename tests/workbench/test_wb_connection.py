@@ -141,6 +141,49 @@ def test_license_is_not_checked_unless_asked(settings):
     assert states(layers)['daemon'] == 'not_checked' and 'client' not in bridge.calls     # cheap = no Virtuoso contact
 
 
+# ---- a connection that does not ask its license server (record 7.479) -----------------------------------------------
+@pytest.mark.parametrize('lines', [
+    [],                                                                                             # nothing read
+    ['Users of Virtuoso_Multi_mode_Simulation:  (Total of 10 licenses issued;  Total of 3 licenses in use)'],     # seats free
+    ['Users of Spectre_Basic:  (Total of 4 licenses issued;  Total of 4 licenses in use)'],         # none free
+])
+def test_a_connection_that_does_not_ask_its_license_server_gets_no_license_answer(settings, lines):
+    """The bridge's license check returns only the lines of licenses that are in use at that moment, so uncounted
+    licenses, an idle license server and a host without lmstat all read as nothing: the license part was `unknown` at
+    every full test, and a real start from the page was refused once, asked whether to go ahead and was then tested in
+    full a second time (all 106 full tests of the user's log). A connection may say "license_check": false: the
+    license part is then not applicable - not ok, not failed, not unknown - and Spectre itself is still looked for."""
+    layers, bridge = check(dict(settings, license_check=False), license=dict(spectre_path='/cad/spectre', licenses=lines))
+    assert states(layers)['spectre'] == 'ok' and states(layers)['spectre_license'] == 'not_applicable'
+    assert reasons(layers)['spectre_license'] == 'license_not_asked'
+    details = layers[-1]['details']
+    assert '"license_check": false' in details['note'] and 'features' not in details and 'next_step' not in details
+    assert bridge.calls.count('license') == 1                           # the one call that finds Spectre is still made
+    assert connection.overall_state(layers, 'full') == 'ok'
+
+
+def test_a_missing_spectre_is_still_named_when_the_license_server_is_not_asked(settings):
+    layers, _ = check(dict(settings, license_check=False), license=dict(spectre_path=None, licenses=[]))
+    assert states(layers)['spectre'] == 'failed' and reasons(layers)['spectre'] == 'spectre_not_found'
+    assert states(layers)['spectre_license'] == 'not_checked'
+
+
+@pytest.mark.parametrize('value', [True, None, 'false', 0, 'no'])
+def test_only_the_value_false_switches_the_license_question_off(settings, value):
+    layers, _ = check(dict(settings, license_check=value), license=dict(spectre_path='/cad/spectre', licenses=[]))
+    assert states(layers)['spectre_license'] == 'unknown' and reasons(layers)['spectre_license'] == 'license_not_checkable'
+    assert '"license_check": false' in layers[-1]['details']['next_step']       # the next step names the setting
+
+
+def test_the_license_setting_reaches_the_probe_from_the_connection_file(settings, monkeypatch, capsys):
+    write_profiles(lab=dict(settings, license_check=False), asking=dict(settings))
+    monkeypatch.setattr(connection, 'RealBridge', FakeBridge(license=dict(spectre_path='/cad/spectre', licenses=[])))
+    assert connection._probe_main(['--profile-id', 'lab', '--scope', 'full']) == 0
+    assert states(json.loads(capsys.readouterr().out)['layers'])['spectre_license'] == 'not_applicable'
+    assert connection._probe_main(['--profile-id', 'asking', '--scope', 'full']) == 0
+    assert states(json.loads(capsys.readouterr().out)['layers'])['spectre_license'] == 'unknown'
+
+
 def test_raw_license_output_and_credentials_never_leave(settings):
     raw = ['Users of Spectre_Basic:  (Total of 4 licenses issued;  Total of 1 licenses in use)',
            '    bob eda-host-17 /dev/pts/3 (v23.1) (licserver/5280 1234), start Fri 9/20 10:01', 'password=hunter2']
@@ -355,6 +398,21 @@ def test_gate_result_is_recorded_in_the_manifest(tmp_path, monkeypatch):
     assert gate['status'] == 'passed_with_acknowledged_unknown' and gate['profile_id'] == 'lab' and gate['checked_utc']
     assert {l['layer']: l['state'] for l in gate['layers']}['spectre_license'] == 'unknown'
     assert 'mock' not in layout.run_dir.parts                               # a real task never lands in the mock root
+
+
+def test_a_start_is_not_held_up_for_a_license_server_that_is_not_asked(tmp_path, monkeypatch):
+    """Record 7.479: an unknown license part needs an acknowledgement before a real run (the test above); a license
+    part that is not asked needs none, and the start is tested once."""
+    from gator_workbench.storage import read_json
+    config = real_task(tmp_path, monkeypatch)
+    unasked = monitor_for(tmp_path, f'print(json.dumps(dict(layers={layers_json(spectre_license="not_applicable")!r})))')
+    gate = unasked.gate('real_simulation', 'lab')
+    assert gate['allowed'] and gate['status'] == 'passed' and gate['uncertain'] == [] and gate['blocking'] == []
+    assert not gate['acknowledged_unknown'] and unasked.probes_started == 1
+    layout, manifest = runs.prepare_run(config, roots_for(tmp_path), allow_real=True, monitor=unasked)    # no acknowledgement
+    recorded = read_json(layout.manifest)['connection_gate']
+    assert recorded['status'] == 'passed' and unasked.probes_started == 2
+    assert {l['layer']: l['state'] for l in recorded['layers']}['spectre_license'] == 'not_applicable'
 
 
 def test_mock_runs_record_not_applicable_and_work_while_the_bridge_is_down(tmp_path):

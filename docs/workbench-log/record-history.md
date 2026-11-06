@@ -751,3 +751,5 @@ One row per commit, newest last.
 | `cd73335` | 11-05 21:39 | 7.477 | Record 7.477: the reading guide's first diagram top to bottom, measured in GitHub's viewer |
 | `1759f29` | 11-05 21:42 | 7.477 | Record 7.477, part 2: record 7.476 was pushed meanwhile (20:54 GMT), and the entry says so |
 | `e303b33` | 11-06 01:08 | 7.478 | Connection: the session lock answers whether a run works on it; the run list finds its folders 16 at a time (record 7.478) |
+| `8c76abd` | 11-06 01:09 | 7.478 | Record 7.478: a connection test no longer waits for the run list; the run list finds its folders 16 at a time |
+| `1ea748d` | 11-06 03:44 | 7.479 | Connection: a connection can say that its license server is not asked, so a real start no longer asks twice (record 7.479) |

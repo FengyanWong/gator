@@ -37,7 +37,8 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.417-7.427.md`](workbench-log/7.417-7.427.md) | entries 7.417–7.427 |
 | [`7.428-7.438.md`](workbench-log/7.428-7.438.md) | entries 7.428–7.438 |
 | [`7.439-7.459.md`](workbench-log/7.439-7.459.md) | entries 7.439–7.459 |
-| [`7.460-and-later.md`](workbench-log/7.460-and-later.md) | entries 7.460 onwards: the OPEN file |
+| [`7.460-7.478.md`](workbench-log/7.460-7.478.md) | entries 7.460–7.478 |
+| [`7.479-and-later.md`](workbench-log/7.479-and-later.md) | entries 7.479 onwards: the OPEN file |
 | [`self-improving-frontend.md`](workbench-log/self-improving-frontend.md) | the branch self-improving-frontend: its own records SIF-1 onwards (not 7.N), merged into workbench 2026-10-22 and 2026-10-24 |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
@@ -51,13 +52,15 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 
 `7.439-and-later.md` is also a pointer: entries 7.439–7.459 were archived unchanged before the next lightening review (7.460).
 
+`7.460-and-later.md` is also a pointer: entries 7.460–7.478 were archived unchanged at 59.1 kB before the license setting (7.479).
+
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.479 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.460-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+**Rolling the open file over:** when the open file passes entry 7.498 or 60 kB, whichever comes first, move its entries
+unchanged into `docs/workbench-log/7.479-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
 the old name as a pointer (like the earlier pointers), change the file table above, and then update `CLAUDE.md` and
 `functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
 2026-10-07, record 7.268 - eleven times the mark; do it in time. `7.266-and-later.md` was rolled over at entry 7.278
@@ -549,3 +552,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.476 | Record 7.475 pushed (5 November, 14:50 GMT) and checked on the public page without a login; the README's diagram replaced by a picture file, because GitHub's diagram viewer lays its own buttons over the diagram and hid 40 % of the last box's words; the document index names the picture |
 | 7.477 | The reading guide's first diagram top to bottom, one line per box: full-size text on GitHub, clear of its buttons |
 | 7.478 | A connection test no longer waits for the run list: the lock of the connection's Virtuoso session answers whether a run works on it, and the runs are looked at only while that lock is held (826 runs: 9-11 s a test, now the test itself); the run list finds its folders 16 at a time (a list in 1.25 s where it took 6 s) |
+| 7.479 | A connection can say `"license_check": false`: its license server is not asked, and a real start no longer asks twice; the record log rolled over; records 7.477 and 7.478 pushed |

@@ -152,7 +152,9 @@ Existing entries are append-only. The current open file is named in [CLAUDE.md](
 | [7.428-and-later.md](workbench-log/7.428-and-later.md) | Old rollover link, preserved for readers of earlier records; points to `7.428-7.438.md`, `7.439-and-later.md`. | Record | Frozen compatibility pointer |
 | [7.439-7.459.md](workbench-log/7.439-7.459.md) | Chronological workbench entries 7.439-7.459. | Record | Frozen closed record |
 | [7.439-and-later.md](workbench-log/7.439-and-later.md) | Old rollover link, preserved for readers of earlier records; points to `7.439-7.459.md`, `7.460-and-later.md`. | Record | Frozen compatibility pointer |
-| [7.460-and-later.md](workbench-log/7.460-and-later.md) | Workbench entries 7.460 onwards; the open log. | Record | Append-only open record |
+| [7.460-7.478.md](workbench-log/7.460-7.478.md) | Chronological workbench entries 7.460-7.478. | Record | Frozen closed record |
+| [7.460-and-later.md](workbench-log/7.460-and-later.md) | Old rollover link, preserved for readers of earlier records; points to `7.460-7.478.md`, `7.479-and-later.md`. | Record | Frozen compatibility pointer |
+| [7.479-and-later.md](workbench-log/7.479-and-later.md) | Workbench entries 7.479 onwards; the open log. | Record | Append-only open record |
 | [7.61-7.80.md](workbench-log/7.61-7.80.md) | Chronological workbench entries 7.61-7.80. | Record | Frozen closed record |
 | [7.61-and-later.md](workbench-log/7.61-and-later.md) | Old rollover link, preserved for readers of earlier records; points to `7.61-7.80.md`, `7.81-7.100.md`, `7.101-and-later.md`. | Record | Frozen compatibility pointer |
 | [7.81-7.100.md](workbench-log/7.81-7.100.md) | Chronological workbench entries 7.81-7.100. | Record | Frozen closed record |

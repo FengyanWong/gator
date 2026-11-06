@@ -39,6 +39,13 @@ tunnel somewhere else). The ngspice kinds have their own four layers, checked by
 this module stays unable to launch anything. The monitor and the gate work per family; an action a
 family cannot serve (reading a Virtuoso cell through ngspice) is refused without probing anything. Since
 2026-09-23 an ngspice connection also serves ``real_simulation``: the ngspice netlist tasks run on it.
+
+The license layer (record 7.479). The bridge's license check returns only the lines of licenses that are IN USE
+at that moment. Uncounted licenses, a license server with no Spectre license in use and a host without
+``lmstat`` therefore all read as nothing: layer 7 is ``unknown`` (``license_not_checkable``), and the gate before
+a real run asks for an acknowledgement at every start. A Virtuoso profile may say ``"license_check": false``:
+the license server is then not asked for seats, layer 7 is ``not_applicable`` and a start is not held up for an
+answer it could never get. Spectre itself (layer 6) is looked for as before.
 """
 from __future__ import annotations
 
@@ -158,6 +165,9 @@ def kind_problem(settings, local) -> tuple | None:
 
 LICENSE_NOTE = ('A license query is a snapshot. It does not check out or hold a seat and does not guarantee that a '
                 'later simulation will obtain one.')
+LICENSE_NOT_ASKED_NOTE = ('This connection says "license_check": false: the license server is not asked for free '
+                          'seats, and a start does not wait for its answer. A simulation that gets no seat fails in '
+                          'its own words.')
 NEXT_STEPS = {
     'bridge_not_importable':
         'Install virtuoso-bridge 0.8.0 into the backend interpreter, or set "bridge_site_packages" for this '
@@ -196,7 +206,10 @@ NEXT_STEPS = {
         'Make `spectre` available on the Spectre host (PATH, VB_SPECTRE_BIN or VB_CADENCE_CSHRC in the .env).',
     'license_unavailable': 'No Spectre seat is reported free. Wait, or ask your license administrator.',
     'license_not_checkable':
-        'The license server gave nothing parseable (lmstat missing or no matching feature listed).',
+        'The license check read no seat count: no Spectre license was in use at that moment, the licenses are '
+        'uncounted, or lmstat is not there. Where it never reads one, set "license_check": false for this '
+        'connection in configs/local/workbench/bridge_connection.json: the license server is then not asked, and '
+        'a start does not wait for it.',
     'probe_timeout': 'The probe did not answer in time. Check the network/tunnel and try again.',
     'busy_active_run': 'A run is using the CIW; a probe timeout during a run means busy, not failed.',
 }
@@ -581,7 +594,8 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
     if not info.get('spectre_path'):
         return fail('spectre', 'failed', 'spectre_not_found',
             'the executable was not found on the resolved Spectre host')
-    _record_spectre_results(results, info)
+    # Only the JSON value false switches the question off: anything else asks, as before (record 7.479).
+    _record_spectre_results(results, info, asked=settings.get('license_check') is not False)
     return list(results.values())
 
 
@@ -612,9 +626,14 @@ def _close_probe_client(client) -> None:
             pass
 
 
-def _record_spectre_results(results, info) -> None:
-    """Record a found Spectre executable and its parsed license availability."""
+def _record_spectre_results(results, info, asked: bool=True) -> None:
+    """Record a found Spectre executable and its parsed license availability; a connection that does not ask its
+    license server (`asked` false) gets no license answer at all - neither ok, nor failed, nor unknown."""
     results['spectre'] = layer('spectre', 'ok', version=redact(info.get('version'), 120))
+    if not asked:
+        results['spectre_license'] = layer('spectre_license', 'not_applicable', 'license_not_asked',
+                                           note=LICENSE_NOT_ASKED_NOTE)
+        return
     features = parse_license_lines(info.get('licenses'))
     relevant = [f for f in features if SPECTRE_FEATURE.search(f['feature'])]
     if not relevant:

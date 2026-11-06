@@ -188,6 +188,24 @@ def test_the_status_sentence_names_the_broken_link_and_the_next_step(settings):
     assert busy['level'] == 'warn' and 'busy is not failed' in busy['headline']
 
 
+def test_a_full_test_that_did_not_ask_the_license_server_does_not_say_a_seat_is_free(settings):
+    """Record 7.479: a connection that says "license_check": false passes its full test without a license answer; the
+    sentence then names what was tested and says that the license server is not asked."""
+    def sentence(bridge, connection_settings, scope='full'):
+        return summarize(dict(scope=scope, checked_utc='x', layers=run_layers(bridge, connection_settings, scope=scope)))
+    asked = sentence(FakeBridge(), settings)
+    assert asked['level'] == 'ok' and 'a free license seat' in asked['headline']
+    unasked = sentence(FakeBridge(), dict(settings, license_check=False))
+    assert unasked['level'] == 'ok' and unasked['broken_layer'] is None and unasked['next_step'] is None
+    assert unasked['headline'] == ('Connected: SSH tunnel, Virtuoso CIW, session and Spectre are OK. The license server is '
+                                   'not asked on this connection.')
+    local = sentence(FakeBridge(local=True, state=dict(mode='local', port=1)), dict(settings, license_check=False))
+    assert local['headline'] == ('Connected: Virtuoso CIW on this machine, session and Spectre are OK. The license server '
+                                 'is not asked on this connection.')
+    # the test without Spectre says what it said: it never asked the license server
+    assert 'CIW answered' in sentence(FakeBridge(), dict(settings, license_check=False), scope='interactive')['headline']
+
+
 def test_the_check_reports_the_setup_path_and_describe_turns_it_into_the_command(settings):
     layers = run_layers(FakeBridge(state=dict(port=65432, setup_path=SETUP)), settings, scope='cheap')
     tunnel = next(l for l in layers if l['layer'] == 'tunnel')

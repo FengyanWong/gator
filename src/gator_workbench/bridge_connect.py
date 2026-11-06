@@ -104,6 +104,12 @@ _TESTED = {
                     '"Test connection".',
            'interactive': 'Connected: the SSH tunnel is up, the Virtuoso CIW answered and the session is ready.',
            'full': 'Connected: SSH tunnel, Virtuoso CIW, session, Spectre and a free license seat are all OK.'}
+# The full test of a connection that says "license_check": false (record 7.479): no seat was asked for, so none
+# is said to be free.
+_TESTED_UNASKED = ('Connected: SSH tunnel, Virtuoso CIW, session and Spectre are OK. The license server is not '
+                   'asked on this connection.')
+_LOCAL_TESTED_UNASKED = ('Connected: Virtuoso CIW on this machine, session and Spectre are OK. The license server '
+                         'is not asked on this connection.')
 # Virtuoso on the backend's own machine: the same layers, but there is no SSH to talk about.
 _LOCAL_LAYER_TEXT = dict(_LAYER_TEXT,
     daemon='The bridge is set up on this machine, but the Virtuoso CIW does not answer - load '
@@ -173,9 +179,12 @@ def summarize(result) -> dict:
     if broken is None:
         scope = result.get('scope', 'interactive')
         tested = _LOCAL_TESTED if transport == 'local' else _TESTED
+        headline = _ngspice_tested(result, transport) if ngspice else tested.get(scope, tested['interactive'])
+        if not ngspice and scope == 'full' and any(item.get('layer') == 'spectre_license'
+                                                    and item.get('state') == 'not_applicable' for item in layers):
+            headline = _LOCAL_TESTED_UNASKED if transport == 'local' else _TESTED_UNASKED
         return dict(level='ok' if scope != 'cheap' else 'partial', broken_layer=None, next_step=None,
-                    headline=_ngspice_tested(result, transport) if ngspice else tested.get(scope,
-                        tested['interactive']))
+                    headline=headline)
     if ngspice:
         by_reason, by_layer = _NGSPICE_REASON_TEXT, _NGSPICE_LAYER_TEXT
     else:

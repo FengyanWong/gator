@@ -753,3 +753,7 @@ One row per commit, newest last.
 | `e303b33` | 11-06 01:08 | 7.478 | Connection: the session lock answers whether a run works on it; the run list finds its folders 16 at a time (record 7.478) |
 | `8c76abd` | 11-06 01:09 | 7.478 | Record 7.478: a connection test no longer waits for the run list; the run list finds its folders 16 at a time |
 | `1ea748d` | 11-06 03:44 | 7.479 | Connection: a connection can say that its license server is not asked, so a real start no longer asks twice (record 7.479) |
+| `873f5f5` | 11-06 03:45 | 7.479 | Record 7.479: a connection can say that its license server is not asked; the record log rolled over; records 7.477 and 7.478 pushed |
+| `a028d83` | 11-06 20:31 | 7.480 | README: rewritten for a human reader - shorter sentences, terms explained at first use, steps and tables (record 7.480) |
+| `0a55ed3` | 11-06 20:35 | 7.480 | Record 7.480: the README rewritten for a human reader; record 7.479 pushed |
+| `4fe8256` | 11-07 00:46 | 7.481 | README: shortened and made more precise (record 7.481) |

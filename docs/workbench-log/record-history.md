@@ -757,3 +757,7 @@ One row per commit, newest last.
 | `a028d83` | 11-06 20:31 | 7.480 | README: rewritten for a human reader - shorter sentences, terms explained at first use, steps and tables (record 7.480) |
 | `0a55ed3` | 11-06 20:35 | 7.480 | Record 7.480: the README rewritten for a human reader; record 7.479 pushed |
 | `4fe8256` | 11-07 00:46 | 7.481 | README: shortened and made more precise (record 7.481) |
+| `d608d0f` | 11-07 00:48 | 7.481 | Record 7.481: the README shortened and made more precise on the user's word |
+| `a7adcab` | 11-12 14:32 | 7.482 | README: a front page tried on a fresh clone - a picture of the page, ngspice steps that end in a run, limits before install (record 7.482) |
+| `c85862a` | 11-12 14:32 | 7.482 | Record 7.482: the README tried on a fresh clone and made a front page; records 7.480 and 7.481 pushed |
+| `77d98ad` | 11-12 14:32 | 7.483 | A test run on GitHub at every push, a citation file, current package metadata; test.txt removed, the specification moved to docs/ (record 7.483) |

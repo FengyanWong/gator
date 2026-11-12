@@ -1,7 +1,8 @@
 # Frontend / run-control / data-output implementation status
 
-The INDEX of the workbench's development record (specification: `gator_claude_code_fable51_frontend_data_outputs_en.md`,
-at the repository root). This is a development record, not a research output or analysis report.
+The INDEX of the workbench's development record (specification:
+[workbench-specification.md](workbench-specification.md)). This is a development record, not a research output or
+analysis report.
 
 **How to use it.** `docs/workbench.md` says what every feature does NOW and is maintained in place: look at its heading
 map (`grep -n '^##' docs/workbench.md`) and read only the section of the feature you touch. The record says how each
@@ -555,3 +556,5 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.479 | A connection can say `"license_check": false`: its license server is not asked, and a real start no longer asks twice; the record log rolled over; records 7.477 and 7.478 pushed |
 | 7.480 | The README rewritten for a human reader: shorter sentences, words explained where they first appear, steps and tables; no fact, number or link lost; record 7.479 pushed |
 | 7.481 | The README shortened and made more precise on the user's word: 2,410 words against 2,622, the same structure, no fact, number or link lost |
+| 7.482 | The README tried on a fresh clone and made a front page: a picture, ngspice steps that run, shorter commands; one test fixed |
+| 7.483 | A test run on GitHub at every push and pull request (the README's install, build and test steps, with a second try for tests that fail by timing); a citation file; the package's description brought up to date; `test.txt` removed and the specification moved to `docs/`; a local tag for the finished experiments; record 7.482 committed |

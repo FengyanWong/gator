@@ -35,7 +35,7 @@ record (`docs/frontend_implementation_status.md` is the index).
 [6 Scripts](#6-scripts-examples) ·
 [7 Tests and checks](#7-tests-and-checks) ·
 [8 Removed or replaced](#8-removed-or-replaced-functions) ·
-[9 Plans, not built](#9-plans-and-parked-work-not-built) ·
+[9 Plans, not built](#9-plans-work-in-progress-and-parked-work) ·
 [10 Where things are recorded](#10-where-things-are-recorded)
 
 ## 1. Starting the workbench
@@ -331,6 +331,7 @@ Several of these are pinned by hash as M5/M6 evidence: never edit, reformat or m
 | Function | What it does | Where | Docs and record |
 |---|---|---|---|
 | Full regression | `OMP_NUM_THREADS=1 ~/analog-optimizer-venv/bin/python -m pytest -q -n 12 --dist loadgroup`, about 1-3 min | `tests/`, `tests/conftest.py`, `pyproject.toml` (`xdist_group`) | CLAUDE.md; 7.117 |
+| Test run on GitHub | At every push and pull request GitHub takes a fresh checkout on Ubuntu 24.04 and runs the README's steps 2 to 4: Python 3.10 with the pinned versions, Node.js 24 and the page build, ngspice from apt, then the full regression with `-n 4`. Tests that fail in that parallel run are run once more, one at a time (the timing-sensitive tests of records 7.196 and 7.437); a test that fails again makes the run red. No simulator licence, PDK, saved model or recorded data is used | `.github/workflows/tests.yml` | README § Install and run; CLAUDE.md; 7.483 |
 | Isolation | Tests never touch the live settings folder; the MOCK stand-in is registered through `GATOR_WORKBENCH_SYNTHETIC_FIXTURES` | `tests/conftest.py`, `tw/helpers.py`, `tw/fixtures/synthetic_fixtures.json` | § What is real and what is mock; 7.128 |
 | Fakes | Fake CLIs and terminals (in `test_wb_agent_cli.py`), fake bridge clients and probe processes, form rules; native scheduling lanes use atomic, non-durable temporary journals (`t/test_native_preparation.py`: `OfflineSizingEnv`), with every restoration and clean exit checked (7.447) | `tw/fixtures/` (`ring_osc/`, `pdk_demo/`) | § Tests |
 | Browser checks | Every `fs/*_check.mjs` (50 on 2026-10-05): headless-Edge checks against scratch backends - one of them, `training_data_check.mjs`, runs `fe/trainingData.ts` and its parts in `fe/training/` under node without a browser - 4 lanes, each check ordered and limited by its duration the last run measured (kept in the OS temp folder, `gator-checks-durations.json`), `--only`, `--skip`, `--retry-failed`. The scratch backends' default output folders are empty ones, so a run working in `outputs/` is not taken over mid-check; the harness holds what the checks shared by copy: `browser.popup` (press, attach, size, wait), `clickAt` (a real click or double click), `savedConfig`, `mockStarter`, `TASK_PANEL` (7.276). The runner makes the two saved MOCK models `encoder_models_check` reads (`fs/fixtures/encoder_models.py`), picks its backends' ports outside the TCP ranges Windows reserves and keeps Vite's cache in the temp folder (7.292) The live MOCK lifecycle check allows 60 seconds for durable Abort saves and a 240-second minimum script watchdog (7.459); all state and persistence assertions remain. | `fs/run_checks.sh`, `fs/run_checks.mjs`, `fs/lib/harness.mjs`, `fs/fixtures/` | § Tests; 7.64, 7.115, 7.276, 7.292 |
@@ -405,7 +406,7 @@ Old configurations that name a removed function still load with their hashes unc
 | [Graph transformer reading guide](graph-transformers-reading-guide.md) | Circuit-to-action walkthrough of Graph Transformer, GraphGPS v1 and CircuitGPS v2; attention, RWSE, measurement trees, residuals, normalization, SAC and pretraining limits, with code and primary-source links (7.343) |
 | `docs/frontend_implementation_status.md` | The index of the development record: one row per entry |
 | `docs/workbench-log/` | The entries themselves (open file: `7.479-and-later.md`), and `record-history.md` (the record's history and the commit table) |
-| `gator_claude_code_fable51_frontend_data_outputs_en.md` | The workbench specification (tracked since 6 October 2026) |
+| `docs/workbench-specification.md` | The workbench specification (tracked since 6 October 2026; at the repository root as `gator_claude_code_fable51_frontend_data_outputs_en.md` until record 7.483) |
 | `CLAUDE.md` | Rules for sessions: digest, evidence pinning, real-simulation authorization, data-only outputs |
 | `.agents/skills/analog-optimizer/` | The research-side rules for M1-M6 (a Codex-style skill; read it as documentation) |
 | `docs/m*-*.md`, `docs/reward-v2.md`, `docs/llm-sizing.md`, `docs/network-presets.md` | Milestone and feature reports |

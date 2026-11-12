@@ -4,7 +4,7 @@ Start with the [repository map](../README.md), then [workbench behavior](workben
 [optimizer package](optimizer-package.md). The [functionality reference](functionality-reference.md) maps a feature
 to its code, tests and records. The [development index](frontend_implementation_status.md) finds individual changes.
 
-This index covers the documents directly in this folder, the picture in images/ and every file in workbench-log/.
+This index covers the documents directly in this folder, the pictures in images/ and every file in workbench-log/.
 **Kept current** marks a maintained reference or active protocol. **Frozen** marks dated scope, evidence or history;
 later evidence does not rewrite an earlier result. A file may have a current contract and frozen result sections.
 
@@ -33,7 +33,8 @@ Some openings precede later execution sections: follow the plan's later records 
 | [experiment-recording.md](experiment-recording.md) | The optional SQLite recording path, storage rules, replay recovery and exports. | Living | Contract kept current; dated acceptance evidence retained |
 | [reward-v2.md](reward-v2.md) | The reward contract and the v2/v2.1 engineering qualification record. | Living / evidence | Contract kept current; dated results frozen |
 | [performance-measurement.md](performance-measurement.md) | How to time work fairly on the shared machine without disturbing other sessions. | Living | Kept current |
-| [images/sizing-loop.svg](images/sizing-loop.svg) | The picture at the top of the repository README: the steps of one sizing loop, from the circuit to the reward. | Living | Kept in step with the README |
+| [images/sizing-loop.svg](images/sizing-loop.svg) | The picture in the repository README's "How it works": the steps of one sizing loop, from the circuit to the reward. | Living | Kept in step with the README |
+| [images/workbench-ngspice-example.png](images/workbench-ngspice-example.png) | The picture at the top of the repository README: the workbench after a run of the built-in ngspice example (12 November 2026, record 7.482). | Living | Taken again when the page's look changes |
 
 ## Plans
 
@@ -99,6 +100,7 @@ Some openings precede later execution sections: follow the plan's later records 
 | [brief-llm-sizing-for-astra.md](brief-llm-sizing-for-astra.md) | The implemented 2026-09-30 LLM-sizing brief; the later removal is recorded in llm-sizing.md. | Brief | Frozen historical implementation instructions |
 | [brief-reward-v2-for-astra.md](brief-reward-v2-for-astra.md) | The original reward-v2 brief, superseded by the real-flow qualification plan. | Brief | Frozen; superseded 2026-09-26 |
 | [brief-reward-v2.1-for-astra.md](brief-reward-v2.1-for-astra.md) | Reward-v2.1 requirements, acceptance gates and completed steps; the matched comparison remained separate. | Brief | Frozen; status 2026-09-30 says done through step 6 |
+| [workbench-specification.md](workbench-specification.md) | The user's original specification of the workbench (2026-09-20): the page, run control and data-only outputs, written as instructions for a coding agent. At the repository root as `gator_claude_code_fable51_frontend_data_outputs_en.md` until 12 November 2026 (record 7.483). | Specification | Frozen as written; what the workbench does now is in workbench.md |
 
 ## Histories, reports and dated guides
 

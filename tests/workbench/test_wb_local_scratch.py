@@ -16,7 +16,9 @@ MOUNTS = ('/dev/sdd / ext4 rw,relatime 0 0\n'
 
 
 def test_the_filesystem_comes_from_the_longest_mount_point_above_the_path():
-    assert layout.filesystem_type('/mnt/d/gator/outputs/run', MOUNTS) == '9p'
+    # A path that exists on no machine: `filesystem_type` follows links, and a path that exists may be a link to a drive
+    # the table below lacks (/mnt/d/gator/outputs on the author's machine since 2026-11-08, record 7.482).
+    assert layout.filesystem_type('/mnt/d/no-such-folder-of-gator/outputs/run', MOUNTS) == '9p'
     assert layout.filesystem_type('/home/someone/outputs', MOUNTS) == 'ext4'
     assert layout.filesystem_type('/mnt/dd/outputs', MOUNTS) == 'ext4'          # only starts with /mnt/d
     assert layout.filesystem_type('/mnt/my drive/outputs', MOUNTS) == 'drvfs'   # \040 is a space in /proc/mounts

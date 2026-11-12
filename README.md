@@ -4,111 +4,82 @@ GATOR sizes analog circuits: it searches for the device sizes, such as widths, l
 circuit of fixed topology meet its specifications. It proposes sizes, simulates every proposal in a real circuit
 simulator, and learns from the results.
 
-You give it the circuit, the values it may change and the specifications. You work in a browser page served from
-your own machine; the page and its server are called the workbench. A run never simulates more designs than you
-approved when you pressed Start. It leaves you its best design and the data of every design it simulated.
+You give it a *task*: one circuit, the values it may change, what to measure and the specifications. You work in a
+browser page served from your own machine; the page and its server are called the workbench. Each complete set of
+sizes that GATOR tries is a *design*, and a design *passes* when it meets every specification. A *run* is one
+execution of a task. It never simulates more designs than you approved when you pressed Start. It leaves you its
+best design and the data of every design it simulated.
 
-![How GATOR sizes a circuit: the circuit, its sizes and the specifications are read as a circuit graph; a graph
-encoder and policy propose device sizes, which are moved to legal values and simulated; the measurements and the
-reward go back to the policy, which learns from them.](docs/images/sizing-loop.svg)
+![The GATOR workbench after a finished run. Above: the task's four specifications and the run's settings. Below: the
+run's key numbers and two charts, in which the reward and the share of passing designs rise over 300
+designs.](docs/images/workbench-ngspice-example.png)
 
-In the picture, the *policy* is the part of the neural network that proposes sizes. The *reward* is a design's score,
-computed from its measurements and the specifications.
+*The workbench after a run of the built-in ngspice example on 12 November 2026: 300 designs in about two minutes,
+225 of them passing.*
 
+- **Method:** reinforcement learning (Soft Actor-Critic) with a neural network that reads the circuit as a graph, by
+  default a graph transformer. See [How it works](#how-it-works).
 - **Simulators:** Cadence Spectre, for schematics drawn in Cadence Virtuoso and reached through the
   [virtuoso-bridge](https://github.com/Arcadia-1/virtuoso-bridge-lite) package, or the free ngspice, for SPICE
   netlists.
-- **Cost:** every design is simulated. With Virtuoso and Spectre, 800 designs took 8 to 14 minutes on a test circuit,
+- **Speed:** every design is simulated. With Virtuoso and Spectre, 800 designs took 8 to 14 minutes on a test circuit,
   four simulations at a time.
+- **Findings:** from scratch, hundreds of 800 designs passed on an amplifier, tens on a ring oscillator, few or none
+  on a regulator, none on a flip-flop. After further training on a new task, a trained model reaches passing designs
+  sooner; how much depends on the task. Its final designs are usually no better. See
+  [What the experiments found](#what-the-experiments-found).
 - **Status:** built by Fengyan Wang for an MSc by Research (MScR) at the University of Edinburgh's School of
   Engineering. The MScR experiments are complete (3 November 2026). Later changes are maintenance; the code stays
   usable.
 - **In this repository:** the code and the written record, not the run data, the saved models (trained networks) or
   the thesis. A run from a clone therefore starts *from scratch*, with an untrained network.
 
-New here? Go to [Install and run](#install-and-run) and [what you can do next](#what-you-can-do-next). Read
-[Limits and safeguards](#limits-and-safeguards) before you point GATOR at a design of your own.
+New here? [Install and run](#install-and-run) ends with a first run for the simulator you have. With Virtuoso, a run
+writes device sizes into the cell it is given, so read [Limits and safeguards](#limits-and-safeguards) before you
+point GATOR at a circuit of your own.
 
-## How it works
+## Limits and safeguards
 
-The name stands for **Graph-Aware Transformer Optimizer for Reinforcement learning**:
+What GATOR does on your machine:
 
-- **Graph-aware.** The circuit is read from its netlist (the list of its devices and connections) as a graph. Each
-  device and each net (a wire) is a point, and each device terminal is a link between them. The graph keeps which
-  terminal touches which net, so a gate is not taken for a drain. It also keeps the hierarchy of subcircuits and
-  which devices share a value.
-- **Transformer.** A neural network reads that graph; the part that reads it is the encoder. By default it is a graph
-  transformer, and it can be swapped: six encoders are included, graph transformer, RGCN, GATv2, GraphGPS, CircuitGPS
-  and parameter-group cross-attention.
-- **Optimizer.** Each step proposes one complete design: one value per independent parameter (matched devices share
-  one). Before simulation, each value is moved to a legal one, inside its bounds and on its grid of allowed values.
-- **Reinforcement learning.** The network learns by trial and error from the simulation results, with Soft
-  Actor-Critic (SAC), during a run or from an archive of earlier runs (offline training). A trained model can be
-  trained further (fine-tuned) on new specifications, another fabrication process or another circuit.
+- On the page, simulations start only when you press a button. Saving a new task is one such press: it simulates
+  the task's starting design once.
+- The one thing the page does by itself is a connection test when it opens. It costs no budget and simulates none of
+  your circuits.
+- A Virtuoso run writes sizes into a working copy of the cell, the copy you made and named, never into your original
+  cell. The sizes are put back when the run ends; a forced abort can leave them changed. Saving a task also writes a
+  Maestro test named GATOR into the copy's testbench.
+- Each run keeps its results in a folder of its own, by default under `outputs/` in the clone. The folder holds the
+  best design's sizes, which the Run status tab also lists, and the data of every design as Parquet tables.
 
-Two classical searches (not neural networks) can take the network's place in a run, for a comparison on equal terms:
-a trust-region Bayesian optimiser (TuRBO-1) and a Pareto optimiser. Both are chosen in a configuration file, not on
-the page. The Pareto optimiser needs BoTorch (0.16.1 was used), which the install commands do not install.
+What it does not do, or needs:
 
-## What the experiments found
-
-Several experiments asked whether a trained model can be reused: for new specifications, in another fabrication
-process, or on another circuit. Words used below:
-
-- A *task* is one circuit with its adjustable parameters, measurements and specifications.
-- A *design* is one complete set of sizes. It *passes* when it meets every specification.
-- A *run* is one execution of a task. In the experiments it normally had 800 simulated designs.
-- *From scratch* means a fresh network, trained on this one task only.
-- *Early passes* are the share of passing designs among designs 9 to 108 of a run.
-- A *seed* fixes a run's random choices. A repeat is the same run with another seed.
-- A *PDK* is the design kit of one fabrication process.
-
-In short: reusing a trained model helps once it is trained further on the new task, and how much depends on the task.
-The gain is time: passing designs come sooner, and the final designs are usually no better. Bracketed numbers are
-entries in the project's dated record. Each link opens the log file that holds the entry; search it for the number.
-
-Where a trained model helped:
-
-- **New specifications, same circuit.** A model first trained on two related tasks reached passing designs earlier,
-  on three analog circuits (an amplifier, a ring oscillator and a regulator) and a flip-flop. On the regulator and
-  the flip-flop, a run from scratch found no passing design
-  ([records 7.310 and 7.314](docs/workbench-log/7.301-7.323.md)).
-- **Another fabrication process.** Models trained in the generic 45 nm PDK were trained further on circuits moved to
-  a second PDK. Early passes, with a range over the different start models:
-
-  | Circuit in the second PDK | From scratch | From a model trained in the generic 45 nm PDK |
-  |---|---|---|
-  | Amplifier | 3 % | 60-66 % |
-  | Ring oscillator | 2 % | 29-41 % |
-
-  On a regulator almost nothing passed from any start ([record 7.329](docs/workbench-log/7.324-7.335.md)). In the
-  reverse direction, back to the generic PDK, only the amplifier gained
-  ([record 7.454](docs/workbench-log/7.439-7.459.md)).
-- **A circuit the model had not seen.** A general model was trained on the recorded designs of several circuits. On
-  a telescopic amplifier, which was not among them, it raised the early passes from 21 % to 79 %
-  ([record 7.330](docs/workbench-log/7.324-7.335.md)).
-
-The limits:
-
-- **Final designs were not better.** A run from a trained model usually ended level with a run from scratch. On the
-  ring oscillator its best designs used about twice the power.
-- **No use without further training.** A trained model that was not trained further proposed 300 designs, and none
-  passed. That held on every circuit moved to another fabrication process and on four circuits from a published
-  study.
-- **Bayesian optimisation was stronger on a published regulator.** TuRBO-1 found 337 to 396 passing designs of 800,
-  against at most 264 in any SAC run ([record 7.318](docs/workbench-log/7.301-7.323.md)). Given a shared archive of
-  earlier designs, it also stayed the best method for a fixed target over three seeds
-  ([record 7.453](docs/workbench-log/7.439-7.459.md)).
-
-Most comparisons have one to three runs for each setting compared, and every evaluation is a nominal schematic
-simulation (see [Limits and safeguards](#limits-and-safeguards)).
-[The experiments in plain words](docs/plan-transfer-experiment.md#1-in-plain-words) lists the questions asked.
+- Every evaluation, the simulation of one design, is a nominal schematic simulation: the schematic at typical
+  conditions. No task can be run at process corners, and there is no Monte Carlo and no layout.
+- The simulator side was built against one 45 nm generic PDK and one foundry PDK on a Cadence host. The foundry PDK
+  is the second PDK of the experiments; its name and files are kept out of this repository.
+- The network cannot take a current as a parameter yet.
+- A design with a missing measurement counts as a failure, and five failures in a row end a run. The number is a
+  setting, under Limits in Run configuration.
+- The server has no login. It listens only on its own machine unless you start it with another `--host`.
+- The page's Agent tab is optional and only advises. A suggestion goes through the normal editor as one change that
+  you can undo, and the Agent never starts a simulation. Its adviser on parameter setup and optimisation settings is
+  a local language model, an NVIDIA Nemotron model on your own GPU. It runs through a pinned llama.cpp build for
+  Windows (WSL included). The large model needs 22 GiB of free GPU memory, the small one 8 GiB.
 
 ## Install and run
 
 You need Linux (WSL included), Python 3.10 and, to build the browser page, Node.js (18, or 20 and later; 24 was
-used). Training uses the CPU build of PyTorch, so no GPU is needed. Create and activate a virtual environment of your
-own (it grows to about 1 GB), then:
+used). Later Python versions are accepted but were not tried. Training uses the CPU build of PyTorch, so no GPU is
+needed. What you can do then depends on your simulator:
+
+| You have | You can | You also need |
+|---|---|---|
+| No simulator | Run the tests, open the page and print an example circuit's graph, but not size a circuit | Nothing more |
+| ngspice, which is free | Size the built-in example amplifier, or a SPICE netlist of your own | ngspice installed |
+| Cadence Virtuoso and Spectre | Size a cell of your own | virtuoso-bridge 0.8.0 (installed separately); a PDK (the design kit of a fabrication process); a cell with its testbench |
+
+Create and activate a virtual environment of your own (it grows to about 1 GB), then:
 
 1. Get the code.
 
@@ -132,83 +103,185 @@ own (it grows to about 1 GB), then:
 4. Run the tests.
 
    ```bash
-   OMP_NUM_THREADS=1 PYTHONPATH="$PWD/src" python -m pytest -q -n 4 --dist loadgroup
+   OMP_NUM_THREADS=1 python -m pytest -q -n 4 --dist loadgroup
    ```
 
 5. Start the server. It keeps running in that terminal.
 
    ```bash
-   PYTHONPATH="$PWD/src" python -m gator_workbench.cli serve --port 8765
+   gator-workbench serve --port 8765
    ```
 
 6. Open <http://127.0.0.1:8765/> in a browser.
 
-Tried as written on a fresh clone (5 November 2026): steps 1 to 5 ran, and about 2,850 tests passed in three
-minutes. Another 35 to 40 were skipped: they read evidence folders that are not in the repository, or need ngspice,
-BoTorch or virtuoso-bridge. A saved model loads only under the versions it was saved with, so
-[constraints.txt](constraints.txt) pins the exact torch, torch-geometric, numpy and networkx versions. The pinned
-`torch==2.14.0+cpu` exists only on PyTorch's CPU index, which is why torch is installed from there first.
+<details>
+<summary>Tried as written on a fresh clone (12 November 2026), and why the versions are pinned</summary>
 
-### What you can do next
+Steps 1 to 5 ran, and about 2,870 tests passed in three to five minutes. Another 35 to 40 were skipped: they read
+evidence folders that are not in the repository, or need ngspice, BoTorch or virtuoso-bridge. A saved model loads
+only under the versions it was saved with, so [constraints.txt](constraints.txt) pins the exact torch,
+torch-geometric, numpy and networkx versions. The pinned `torch==2.14.0+cpu` exists only on PyTorch's CPU index,
+which is why torch is installed from there first.
 
-| You have | You can | You also need |
-|---|---|---|
-| No simulator | Run the tests, open the page and print an example circuit's graph, but not size a circuit | Nothing more |
-| ngspice, which is free | Size the built-in example amplifier | ngspice installed |
-| Cadence Virtuoso and Spectre | Size a cell of your own | virtuoso-bridge 0.8.0 (installed separately); a PDK; a cell with its testbench |
+</details>
+
+### A first run
+
+The page opens its windows (Connection, Tasks and others) as browser windows of their own, so allow pop-ups for it.
+Some buttons show only a picture, and their names appear as tooltips. Start is the play triangle in the header.
 
 **No simulator.** The tests use a stand-in circuit of their own, and the page opens with no task to run. This prints
 the graph GATOR builds from a five-transistor amplifier's netlist:
 
 ```bash
-PYTHONPATH="$PWD/src" python examples/netlist_demo.py \
-  --config configs/gpdk045_opamp.json examples/circuits/gpdk045_ota5.scs
+python examples/netlist_demo.py --config configs/gpdk045_opamp.json examples/circuits/gpdk045_ota5.scs
 ```
 
-**ngspice.** Install ngspice where the server runs: it looks for the `ngspice` command on its own machine. Then:
+**ngspice.** Install ngspice where the server runs: it looks for the `ngspice` command on its own machine. The six
+steps below end in a run like the one in the picture at the top:
 
 1. Open the Connection window (its button is in the page's header) and add an "ngspice on this machine" connection.
-2. In the Tasks window, choose **From an ngspice netlist...**, then **Example** (a five-transistor amplifier on
-   textbook transistor models; no PDK needed).
-3. Save it as a task.
-4. Fill in Specs, which the example leaves to you: your requirements on the values it measures. The Probes tab lists
-   them, such as gain, unity-gain frequency, phase margin and supply power.
-5. Press Start.
+2. Press **From an ngspice netlist...** (on the empty page or in the Tasks window), then **Example** (a
+   five-transistor amplifier on textbook transistor models; no PDK needed), then **Save as task**. Saving simulates
+   the starting design once.
+3. On the Parameters tab, tick the row `ibias_dc` and press Delete selected (the bin). The network cannot take a
+   current as a parameter yet, and the page blocks Start while that row is there.
+4. Press **Matched devices...**, then **Review...** and **Apply**. The two input transistors now share one size, and
+   so do the two load transistors. Without these ties, half of a trial run's first 36 designs had no unity-gain
+   frequency, and the run ended as failed.
+5. Fill in Specs, which the example leaves to you: your requirements on the values it measures. The Probes tab lists
+   them, such as gain, unity-gain frequency, phase margin and supply power. The picture shows the four rows of its
+   run.
+6. In Run configuration, set the evaluation budget and the concurrent jobs (60 and 1 at first; the picture's run had
+   300 and 4). Press Start and confirm the number of simulations.
 
-Details: [the ngspice window](docs/workbench.md#an-ngspice-netlist-as-a-task-the-ngspice-window-added-2026-09-23-user-request)
-in the workbench reference.
+These steps were pressed on a fresh clone on a desktop PC (12 November 2026). The best passing design used 46 uW of
+supply power; the starting design used 71 uW. The same window takes a netlist of your own: see
+[the ngspice window](docs/workbench.md#an-ngspice-netlist-as-a-task-the-ngspice-window-added-2026-09-23-user-request)
+in the workbench reference for what it must contain.
 
-**Cadence Virtuoso and Spectre.** A run writes device sizes into the cell it works in, so work on a copy. Reading a
-cell into the page does not copy it: copy the cell and its testbench in Virtuoso first, then read the copy in. The
-page asks you to confirm that it is a copy. See
-[connection profiles](docs/workbench.md#connection-profiles-section-21) and
+**Cadence Virtuoso and Spectre.** A run writes device sizes into the cell it works in, so work on a copy. In outline:
+
+1. Install virtuoso-bridge 0.8.0 and add a Virtuoso connection in the Connection window. Virtuoso may run on the
+   server's machine or on another one, reached over SSH. See
+   [connection profiles](docs/workbench.md#connection-profiles-section-21).
+2. In Virtuoso, copy the cell and its testbench. Reading a cell into the page does not copy it.
+3. Press **From a Virtuoso cell...**, choose the copy and press **Read this cell into the workbench**. The page asks
+   you to confirm that it is a copy.
+4. Fill in the tabs Parameters, Probes and Specs: what a run may change, what is measured, and your limits on it.
+5. Press **Save as**, then Start. [Limits and safeguards](#limits-and-safeguards) says what each writes into the
+   copy.
+
+The details are in
 [a task's Virtuoso side](docs/workbench.md#a-tasks-virtuoso-side-the-cell-it-works-in-saving-the-run).
 
-## Limits and safeguards
+**Without the page.** A run can also start from a configuration file, such as the one **Export JSON** on the page
+writes. This was tried with the ngspice example. The flag approves the file's number of simulations, as Start does
+on the page:
 
-What GATOR does on your machine:
+```bash
+gator-workbench run --authorize-real my.config.json
+```
 
-- Simulations start only when you press a button. Saving a new task is one such press: it simulates the task's
-  starting design once.
-- The one thing the page does by itself is a connection test when it opens. It costs no budget and simulates none of
-  your circuits.
-- A Virtuoso run writes sizes into a working copy of the cell, the copy you made and named, never into your original
-  design. The sizes are put back when the run ends; a forced abort can leave them changed. Saving a task also writes
-  a Maestro test named GATOR into the copy's testbench.
-- The Agent tab only advises. A suggestion goes through the normal editor as one change that you can undo, and the
-  Agent never starts a simulation.
+## How it works
 
-What it does not do, or needs:
+![How GATOR sizes a circuit: the circuit, its sizes and the specifications are read as a circuit graph; a graph
+encoder and policy propose device sizes, which are moved to legal values and simulated; the measurements and the
+reward go back to the policy, which learns from them.](docs/images/sizing-loop.svg)
 
-- Every evaluation is a nominal schematic simulation: the schematic at typical conditions. No saved task simulates
-  at process corners, and there is no Monte Carlo and no layout.
-- The simulator side was built against one 45 nm generic PDK and one foundry PDK on a Cadence host. The foundry PDK
-  is the second PDK of the experiments; its name and files are kept out of this repository.
-- The Agent tab is optional. Its adviser on parameter setup and optimisation settings is a local language model, an
-  NVIDIA Nemotron model on your own GPU. It runs through a pinned llama.cpp build for Windows (WSL included). The
-  large model needs 22 GiB of free GPU memory, the small one 8 GiB.
+In the picture, the *policy* is the part of the neural network that proposes sizes. The *reward* is a design's score,
+computed from its measurements and the specifications.
+
+The name stands for **Graph-Aware Transformer Optimizer for Reinforcement learning**:
+
+- **Graph-aware.** The circuit is read from its netlist (the list of its devices and connections) as a graph. Each
+  device and each net (a wire) is a point, and each device terminal is a link between them: in graph terms, nodes
+  and edges. The graph keeps which terminal touches which net, so a gate is not taken for a drain. It also keeps the
+  hierarchy of subcircuits and which devices share a value.
+- **Transformer.** A neural network reads that graph; the part that reads it is the encoder. By default it is a graph
+  transformer, and it can be swapped: six encoders are included, graph transformer, RGCN, GATv2,
+  [GraphGPS](docs/global-encoders.md), [CircuitGPS](docs/circuit-gps.md) and
+  [parameter-group cross-attention](docs/global-encoders.md).
+- **Optimizer.** Each step proposes one complete design: one value per independent parameter (matched devices share
+  one). Before simulation, each value is moved to a legal one, inside its bounds and on its grid of allowed values.
+- **Reinforcement learning.** The network learns by trial and error from the simulation results, with Soft
+  Actor-Critic (SAC), during a run or from an archive of earlier runs (offline training). A trained model can be
+  trained further (fine-tuned) on new specifications, another fabrication process or another circuit.
+
+Two classical searches (not neural networks) can take the network's place in a run, for a comparison on equal terms:
+a trust-region Bayesian optimiser (TuRBO-1) and a Pareto optimiser. Both are chosen in a configuration file, not on
+the page. The workbench reference describes the first under
+[a comparison method](docs/workbench.md#search-sac-only-2026-10-06-record-7226); the second is the arm M+ of
+[the archive comparison](docs/plan-bo-mobo-rl-archive-comparison.md). The Pareto optimiser is a multi-objective
+Bayesian optimiser. It needs BoTorch (0.16.1 was used), which the install commands do not install.
+
+## What the experiments found
+
+Several experiments asked whether a trained model can be reused: for new specifications, in another fabrication
+process, or on another circuit. In short: reusing a trained model helps once it is trained further on the new task,
+and how much depends on the task. The gain is time: passing designs come sooner, and the final designs are usually
+no better.
+
+Most comparisons have one to three runs for each setting compared, and every evaluation is a nominal schematic
+simulation (see [Limits and safeguards](#limits-and-safeguards)). A run normally had 800 simulated designs.
+Bracketed numbers are entries in the project's dated record. Each link opens the log file that holds the entry;
+search it for the number.
+
+*From scratch* means a fresh network, trained on this one task only. It is how a run from a clone starts:
+
+- **It depends on the circuit.** Of 800 designs, 363 to 619 passed on a five-transistor amplifier and 62 to 87 on a
+  ring oscillator. On a regulator, one run found 75 passing designs and four found none. On a flip-flop, five runs
+  found none. Each circuit had five runs over three sets of specifications, with the GraphGPS encoder
+  ([records 7.310 and 7.314](docs/workbench-log/7.301-7.323.md)).
+
+Where a trained model helped:
+
+- **New specifications, same circuit.** A model first trained on two related tasks reached passing designs earlier,
+  on three analog circuits (an amplifier, a ring oscillator and a regulator) and a flip-flop. With a changed
+  specification, the amplifier's first passing design came at design 13 to 31 instead of 118 to 186. With the
+  changed specifications of the regulator and the flip-flop, no run from scratch found a passing design
+  ([records 7.310 and 7.314](docs/workbench-log/7.301-7.323.md)).
+- **Another fabrication process.** Models trained in the generic 45 nm PDK were trained further on circuits moved to
+  a second PDK. *Early passes* are the share of passing designs among designs 9 to 108 of a run. Here they are, with
+  a range over the different start models:
+
+  | Circuit in the second PDK | From scratch | From a model trained in the generic 45 nm PDK |
+  |---|---|---|
+  | Amplifier | 3 % | 60-66 % |
+  | Ring oscillator | 2 % | 29-41 % |
+
+  On a regulator almost nothing passed from any start ([record 7.329](docs/workbench-log/7.324-7.335.md)). In the
+  reverse direction, back to the generic PDK, only the amplifier gained
+  ([record 7.454](docs/workbench-log/7.439-7.459.md)).
+- **A circuit the model had not seen.** A general model was trained on the recorded designs of several circuits. On
+  a telescopic amplifier, which was not among them, it raised the early passes from 21 % to 79 %
+  ([record 7.330](docs/workbench-log/7.324-7.335.md)).
+
+The limits:
+
+- **Final designs were not better.** A run from a trained model usually ended level with a run from scratch. On the
+  ring oscillator its best designs used about twice the power.
+- **No use without further training.** A trained model that was not trained further proposed 300 designs, and none
+  passed. That held on every circuit moved to another fabrication process and on the four circuits of a preprint
+  (AgenticSizing, [arXiv:2609.25873](https://arxiv.org/abs/2609.25873)).
+- **Bayesian optimisation was stronger on that preprint's regulator.** TuRBO-1 found 337 to 396 passing designs of
+  800,
+  against at most 264 in any SAC run ([record 7.318](docs/workbench-log/7.301-7.323.md)). Given a shared archive of
+  earlier designs, it also stayed the default for a fixed target over three seeds: nothing replaced it. It reached
+  the target on an amplifier in two seeds and on a regulator in all three. Neither pretrained SAC arm reached it in
+  any of nine runs, and no method did on a flip-flop ([record 7.453](docs/workbench-log/7.439-7.459.md)). A *seed*
+  fixes a run's random choices; a repeat is the same run with another seed.
+
+[The experiments in plain words](docs/plan-transfer-experiment.md#1-in-plain-words) lists the questions asked.
 
 ## What is in the repository
+
+The code has three parts: the browser page in [frontend/](frontend/), its server in
+[src/gator_workbench/](src/gator_workbench/) and the optimizer library in
+[src/analog_optimizer/](src/analog_optimizer/). The [documentation index](docs/README.md) lists every document.
+
+<details>
+<summary>Every folder, one line each</summary>
 
 | Location | What it holds |
 |---|---|
@@ -221,6 +294,8 @@ What it does not do, or needs:
 | [docs/](docs/README.md) | The written record: references, plans with their outcomes, and a dated record of every change and experiment, listed in the [index of records](docs/frontend_implementation_status.md). [README history](docs/history-readme-milestones.md) keeps the first README's milestones. |
 | [.agents/](.agents/), [CLAUDE.md](CLAUDE.md), [the specification](gator_claude_code_fable51_frontend_data_outputs_en.md) | The research contracts, the working rules and the workbench's specification, written for the coding agents that helped build GATOR. |
 | [pyproject.toml](pyproject.toml), [constraints.txt](constraints.txt) | Dependencies, and the exact versions that saved models need. |
+
+</details>
 
 Not in the repository:
 
@@ -246,8 +321,22 @@ Read next:
 
 ## Citing and licence
 
-To cite GATOR, cite this repository: Fengyan Wang, *GATOR: Graph-Aware Transformer Optimizer for Reinforcement
-learning*, 2026, <https://github.com/FengyanWong/gator>. For questions, open an issue there.
+No paper describes GATOR. To cite it, cite this repository: Fengyan Wang, *GATOR: Graph-Aware Transformer Optimizer
+for Reinforcement learning*, 2026, <https://github.com/FengyanWong/gator>. For questions, open an issue there.
+
+<details>
+<summary>BibTeX</summary>
+
+```bibtex
+@misc{wang2026gator,
+  author       = {Wang, Fengyan},
+  title        = {{GATOR}: Graph-Aware Transformer Optimizer for Reinforcement learning},
+  year         = {2026},
+  howpublished = {\url{https://github.com/FengyanWong/gator}}
+}
+```
+
+</details>
 
 GATOR is released under the [MIT licence](LICENSE). The licence covers this repository's code and documents. It does
 not cover Cadence Virtuoso, Spectre, any PDK, the NVIDIA models or the other software GATOR works with. Each of those

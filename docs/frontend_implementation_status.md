@@ -555,3 +555,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.479 | A connection can say `"license_check": false`: its license server is not asked, and a real start no longer asks twice; the record log rolled over; records 7.477 and 7.478 pushed |
 | 7.480 | The README rewritten for a human reader: shorter sentences, words explained where they first appear, steps and tables; no fact, number or link lost; record 7.479 pushed |
 | 7.481 | The README shortened and made more precise on the user's word: 2,410 words against 2,622, the same structure, no fact, number or link lost |
+| 7.482 | The README tried on a fresh clone and made a front page: a picture, ngspice steps that run, shorter commands; one test fixed |

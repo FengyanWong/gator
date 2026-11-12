@@ -1,0 +1,82 @@
+# GitHub runs this on its own machines at every push and every pull request. It is the README's "Install and run",
+# steps 2 to 4, on a fresh checkout: install, build the browser page, run the tests. Change the two together.
+#
+# Why each choice:
+# - ubuntu-24.04, not ubuntu-latest: the tests were tried with this release's ngspice (version 42), and a later
+#   release brings another one.
+# - Python 3.10 and constraints.txt: the versions the saved models need (README, "Install and run").
+# - ngspice from apt: with it the five tests that run the real ngspice program run too; without it they are skipped.
+# - No simulator licence, PDK, saved model or recorded run data is used or needed: the tests that read recorded
+#   evidence skip themselves, as they do on any fresh clone.
+# - The second test step: a few tests are known to fail by timing when the machine is busy (records 7.196 and
+#   7.437 name five; record 7.483 saw two of them fail), and this machine has four processors for four test
+#   processes. So the tests that failed are run once more, one at a time. A test that really fails, fails there
+#   too, and the run is red. A run that needed the second step shows a warning.
+name: Tests
+
+on:
+  push:
+    branches: ["**"]        # every branch; a pushed tag does not test the same commit a second time
+  pull_request:
+  workflow_dispatch:        # the "Run workflow" button on the Actions tab
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true  # a newer push to the same branch replaces the run of the older one
+
+jobs:
+  tests:
+    name: Install, build and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            constraints.txt
+            pyproject.toml
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install ngspice
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ngspice
+          ngspice --version
+
+      - name: Install PyTorch from its CPU index, then GATOR
+        run: |
+          python -m pip install -c constraints.txt torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -c constraints.txt -e '.[graph,test,web,webtest]'
+
+      - name: Build the browser page
+        run: (cd frontend && npm ci && npm run build)
+
+      - name: Run the tests
+        id: tests
+        continue-on-error: true
+        run: OMP_NUM_THREADS=1 python -m pytest -q -n 4 --dist loadgroup
+
+      # The same distribution mode as above, with one process: under "loadgroup" a grouped test carries its group in
+      # its name, and --last-failed finds a test again only under the name it failed with.
+      - name: Run the failed tests again, one at a time
+        if: steps.tests.outcome == 'failure'
+        run: |
+          echo "::warning::Some tests failed in the parallel run (the step before names them). Run again here, alone."
+          OMP_NUM_THREADS=1 python -m pytest -q -x -n 1 --dist loadgroup --last-failed --last-failed-no-failures none

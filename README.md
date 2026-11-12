@@ -123,6 +123,11 @@ only under the versions it was saved with, so [constraints.txt](constraints.txt)
 torch-geometric, numpy and networkx versions. The pinned `torch==2.14.0+cpu` exists only on PyTorch's CPU index,
 which is why torch is installed from there first.
 
+GitHub repeats steps 2 to 4 on a machine of its own at every push and pull request, with ngspice installed. A
+test that fails there beside the other test processes is run once more by itself before the run counts as failed.
+The steps are in [the workflow file](.github/workflows/tests.yml); the results are on the repository's Actions
+tab.
+
 </details>
 
 ### A first run
@@ -292,8 +297,10 @@ The code has three parts: the browser page in [frontend/](frontend/), its server
 | [examples/](examples/) | Scripts of the early milestones, benchmarks and audits, kept as research history, not as tutorials. The netlist demo above is one of them. |
 | [configs/](configs/) | Parser mappings and research configurations. Files pinned by an audit stay unchanged. |
 | [docs/](docs/README.md) | The written record: references, plans with their outcomes, and a dated record of every change and experiment, listed in the [index of records](docs/frontend_implementation_status.md). [README history](docs/history-readme-milestones.md) keeps the first README's milestones. |
-| [.agents/](.agents/), [CLAUDE.md](CLAUDE.md), [the specification](gator_claude_code_fable51_frontend_data_outputs_en.md) | The research contracts, the working rules and the workbench's specification, written for the coding agents that helped build GATOR. |
+| [.agents/](.agents/), [CLAUDE.md](CLAUDE.md), [the specification](docs/workbench-specification.md) | The research contracts, the working rules and the workbench's specification, written for the coding agents that helped build GATOR. |
 | [pyproject.toml](pyproject.toml), [constraints.txt](constraints.txt) | Dependencies, and the exact versions that saved models need. |
+| [.github/](.github/workflows/tests.yml) | The test run GitHub starts at every push and pull request: the install, build and test steps of this README. |
+| [CITATION.cff](CITATION.cff) | How to cite GATOR, in the form that GitHub and reference managers read. |
 
 </details>
 
@@ -323,6 +330,7 @@ Read next:
 
 No paper describes GATOR. To cite it, cite this repository: Fengyan Wang, *GATOR: Graph-Aware Transformer Optimizer
 for Reinforcement learning*, 2026, <https://github.com/FengyanWong/gator>. For questions, open an issue there.
+The same citation is in [CITATION.cff](CITATION.cff), which GitHub offers under **Cite this repository**.
 
 <details>
 <summary>BibTeX</summary>

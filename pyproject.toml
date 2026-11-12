@@ -3,13 +3,24 @@ requires = ["setuptools>=77"]   # the SPDX license field (PEP 639)
 build-backend = "setuptools.build_meta"
 
 [project]
+# The project is called GATOR. The distribution keeps its first name, analog-optimizer, and the two packages keep
+# theirs (analog_optimizer, gator_workbench). The version stays 0.1.0: the same number is written in
+# src/analog_optimizer/__init__.py, which the saved models' source digest covers, and in
+# src/gator_workbench/__init__.py, which every run's manifest records.
 name = "analog-optimizer"
 version = "0.1.0"
-description = "Terminal-aware circuit graphs and nominal graph SAC sizing"
+description = "GATOR: analog circuit sizing with graph encoders and reinforcement learning (Soft Actor-Critic)"
+readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
+authors = [{ name = "Fengyan Wang" }]
 dependencies = []
+
+[project.urls]
+Repository = "https://github.com/FengyanWong/gator"
+Documentation = "https://github.com/FengyanWong/gator/blob/main/docs/README.md"
+Issues = "https://github.com/FengyanWong/gator/issues"
 
 [project.optional-dependencies]
 # Ranges for a fresh project. The EXACT versions that existing saved models need are in constraints.txt (pip install -c).

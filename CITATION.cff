@@ -1,0 +1,18 @@
+# How to cite GATOR. GitHub reads this file for its "Cite this repository" button.
+# No paper describes GATOR and it has no DOI, so the citation is the repository itself.
+# The date is the day the repository became public. The README's "Citing and licence" says the same in words.
+cff-version: 1.2.0
+message: "If you use GATOR, please cite this repository. No paper describes it."
+type: software
+title: "GATOR: Graph-Aware Transformer Optimizer for Reinforcement learning"
+abstract: >-
+  GATOR sizes analog circuits: it searches for the device sizes that make a circuit of fixed topology meet its
+  specifications. It proposes sizes by reinforcement learning (Soft Actor-Critic) with a neural network that reads the
+  circuit as a graph, and it simulates every proposal in Cadence Spectre or ngspice.
+authors:
+  - family-names: Wang
+    given-names: Fengyan
+repository-code: "https://github.com/FengyanWong/gator"
+url: "https://github.com/FengyanWong/gator"
+license: MIT
+date-released: 2026-11-05

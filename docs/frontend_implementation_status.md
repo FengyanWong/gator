@@ -1,7 +1,8 @@
 # Frontend / run-control / data-output implementation status
 
-The INDEX of the workbench's development record (specification: `gator_claude_code_fable51_frontend_data_outputs_en.md`,
-at the repository root). This is a development record, not a research output or analysis report.
+The INDEX of the workbench's development record (specification:
+[workbench-specification.md](workbench-specification.md)). This is a development record, not a research output or
+analysis report.
 
 **How to use it.** `docs/workbench.md` says what every feature does NOW and is maintained in place: look at its heading
 map (`grep -n '^##' docs/workbench.md`) and read only the section of the feature you touch. The record says how each

@@ -100,6 +100,7 @@ Some openings precede later execution sections: follow the plan's later records 
 | [brief-llm-sizing-for-astra.md](brief-llm-sizing-for-astra.md) | The implemented 2026-09-30 LLM-sizing brief; the later removal is recorded in llm-sizing.md. | Brief | Frozen historical implementation instructions |
 | [brief-reward-v2-for-astra.md](brief-reward-v2-for-astra.md) | The original reward-v2 brief, superseded by the real-flow qualification plan. | Brief | Frozen; superseded 2026-09-26 |
 | [brief-reward-v2.1-for-astra.md](brief-reward-v2.1-for-astra.md) | Reward-v2.1 requirements, acceptance gates and completed steps; the matched comparison remained separate. | Brief | Frozen; status 2026-09-30 says done through step 6 |
+| [workbench-specification.md](workbench-specification.md) | The user's original specification of the workbench (2026-09-20): the page, run control and data-only outputs, written as instructions for a coding agent. At the repository root as `gator_claude_code_fable51_frontend_data_outputs_en.md` until 12 November 2026 (record 7.483). | Specification | Frozen as written; what the workbench does now is in workbench.md |
 
 ## Histories, reports and dated guides
 

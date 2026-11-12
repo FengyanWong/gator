@@ -557,3 +557,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.480 | The README rewritten for a human reader: shorter sentences, words explained where they first appear, steps and tables; no fact, number or link lost; record 7.479 pushed |
 | 7.481 | The README shortened and made more precise on the user's word: 2,410 words against 2,622, the same structure, no fact, number or link lost |
 | 7.482 | The README tried on a fresh clone and made a front page: a picture, ngspice steps that run, shorter commands; one test fixed |
+| 7.483 | A test run on GitHub at every push and pull request (the README's install, build and test steps, with a second try for tests that fail by timing); a citation file; the package's description brought up to date; `test.txt` removed and the specification moved to `docs/`; a local tag for the finished experiments; record 7.482 committed |

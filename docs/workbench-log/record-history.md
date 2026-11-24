@@ -763,3 +763,5 @@ One row per commit, newest last.
 | `77d98ad` | 11-12 14:32 | 7.483 | A test run on GitHub at every push, a citation file, current package metadata; test.txt removed, the specification moved to docs/ (record 7.483) |
 | `3ba6232` | 11-12 14:32 | 7.483 | Record 7.483: a test run on GitHub, a citation file, current package metadata, the root folder tidied; record 7.482 committed |
 | `72c35f5` | 11-24 19:09 | 7.484 | A write from another site's page is refused; eight tests freed of the machine; the page's unit tests and a weekly run on GitHub (record 7.484) |
+| `f5336a1` | 11-24 19:09 | 7.484 | Record 7.484: a write from another site's page refused, eight tests freed of the machine, the page's unit tests and a weekly run on GitHub; records 7.482 and 7.483 seen on GitHub |
+| `5b7b063` | 11-24 22:30 | 7.485 | Server: the local Agent's first status request, framing and the documentation pages closed to other sites (record 7.485) |

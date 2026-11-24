@@ -39,7 +39,8 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.428-7.438.md`](workbench-log/7.428-7.438.md) | entries 7.428–7.438 |
 | [`7.439-7.459.md`](workbench-log/7.439-7.459.md) | entries 7.439–7.459 |
 | [`7.460-7.478.md`](workbench-log/7.460-7.478.md) | entries 7.460–7.478 |
-| [`7.479-and-later.md`](workbench-log/7.479-and-later.md) | entries 7.479 onwards: the OPEN file |
+| [`7.479-7.484.md`](workbench-log/7.479-7.484.md) | entries 7.479–7.484 |
+| [`7.485-and-later.md`](workbench-log/7.485-and-later.md) | entries 7.485 onwards: the OPEN file |
 | [`self-improving-frontend.md`](workbench-log/self-improving-frontend.md) | the branch self-improving-frontend: its own records SIF-1 onwards (not 7.N), merged into workbench 2026-10-22 and 2026-10-24 |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
@@ -55,13 +56,15 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 
 `7.460-and-later.md` is also a pointer: entries 7.460–7.478 were archived unchanged at 59.1 kB before the license setting (7.479).
 
+`7.479-and-later.md` is also a pointer: entries 7.479–7.484 were archived unchanged at 59.1 kB before the framing headers (7.485).
+
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.498 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.479-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+**Rolling the open file over:** when the open file passes entry 7.504 or 60 kB, whichever comes first, move its entries
+unchanged into `docs/workbench-log/7.485-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
 the old name as a pointer (like the earlier pointers), change the file table above, and then update `CLAUDE.md` and
 `functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
 2026-10-07, record 7.268 - eleven times the mark; do it in time. `7.266-and-later.md` was rolled over at entry 7.278
@@ -559,3 +562,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.482 | The README tried on a fresh clone and made a front page: a picture, ngspice steps that run, shorter commands; one test fixed |
 | 7.483 | A test run on GitHub at every push and pull request (the README's install, build and test steps, with a second try for tests that fail by timing); a citation file; the package's description brought up to date; `test.txt` removed and the specification moved to `docs/`; a local tag for the finished experiments; record 7.482 committed |
 | 7.484 | A write sent by another site's page is refused; eight tests freed of their machine; the page's unit tests and a weekly run on GitHub; FastAPI 0.133 and Starlette 1.7 at least; records 7.482 and 7.483 seen on GitHub |
+| 7.485 | Three cross-site gaps closed: the local Agent's first status request, framing, the documentation pages; the record log rolled over; the push to `main` refused |

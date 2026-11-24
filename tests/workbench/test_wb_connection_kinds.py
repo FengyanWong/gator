@@ -247,6 +247,9 @@ def test_REAL_remote_command_line_runs_under_sh_and_leaves_no_file_behind(tmp_pa
 
     class ShellInsteadOfSsh(ngspice_link.RealRunner):
         """A runner that executes the remote shell command locally for quoting checks."""
+        def which(self, program):
+            return program            # `sh` stands in for ssh below: this machine needs no ssh program (record 7.484)
+
         def run(self, argv, **kwargs):
             assert argv[0] == 'ssh' and argv[-3] == '--'
             return super().run(['sh', '-c', argv[-1]], **kwargs)

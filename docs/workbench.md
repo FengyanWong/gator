@@ -72,6 +72,24 @@ backends use an empty one, record 7.276).
 `--connection-check-on-start` runs one cheap connection check at start (off by default, see
 "Connecting from the panel").
 
+**Who the backend answers (records 7.117 and 7.484).** Two checks run before any route (`api/app.py`). First the Host
+check: a request is answered only under the names the backend is served on, the loopback names and the `--host`; any
+other Host header is answered 400. It refuses a page whose name was made to resolve to this machine (DNS rebinding). A
+wildcard `--host` (`0.0.0.0`, `::`) checks no name, so there such a page is not refused: to the browser it is the
+backend's own page, and the second check lets it pass. Then the cross-site check (`cross_site_write`) looks at every
+request that may change something, that is any method but GET, HEAD and OPTIONS. Such a request is refused with 403,
+and changes nothing, when the browser sent it for a web page of another site or of another program on this machine.
+The browser says so in the `Sec-Fetch-Site` header; where it sends none (plain http under a machine name, an old
+browser), the `Origin` header must name the address the request was sent to. The page that the backend serves passes,
+and so does the page behind the Vite proxy of `npm run dev` and of the browser checks. A request without these headers
+passes too: it comes from no browser (curl, a script, the tests, an agent's command line). The cross-site check also
+runs under a wildcard `--host`. The page shows the refusal's message (code `cross_site_request`). Reading is not
+checked, and one GET still changes something: the first `GET /api/local-agent` starts the local Agent's one-time
+install (left open by record 7.484). A second defence is FastAPI's own. From 0.132 it reads no body that comes without
+any Content-Type as JSON, and from 0.65.2 it has read no `text/plain` body as JSON; those are the only forms in which
+a page of another site can send JSON without the browser asking the backend first. `pyproject.toml` asks for FastAPI
+0.133 or later and Starlette 1.7 or later, whose Host check also accepts an IPv6 address such as `[::1]:8765`.
+
 Start-up takes about 2 s before the port opens: the backend imports torch / torch_geometric once,
 in one thread, before it serves anything (`gator_workbench.preload`). Importing them on first use
 let two parallel first requests corrupt the import, and every later static validation then

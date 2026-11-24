@@ -7,6 +7,7 @@ import time
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import Headers
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .. import __version__, bridge_connect, connection, consistency, launch_requests, runs
 from ..names import LOOPBACK_HOSTS
@@ -19,6 +20,13 @@ from .support import attachment, file_snapshot  # compatibility exports
 
 WILDCARD_HOSTS = ('0.0.0.0', '::', '')
 ACTIVE_RUN_REUSE_SECONDS = 3.0                   # how long one look for a run that works on a connection serves (7.279)
+READ_METHODS = ('GET', 'HEAD', 'OPTIONS')        # every other method may change something (cross_site_write, 7.484)
+OWN_PAGE = ('same-origin', 'none')               # Sec-Fetch-Site: the page this backend served; the user's own typing
+CROSS_SITE_REFUSAL = (
+    'Refused, and nothing was changed: this request was sent by a web page that is not the page of this workbench (a '
+    'page of another site, a page of another program on this machine, or a file opened in the browser). If you are '
+    'working in the workbench itself, the page reaches the workbench backend through a proxy that changes its '
+    'address: open the workbench at the address the backend printed when it started.')
 
 
 def trusted_hosts(host=None) -> list[str]:
@@ -26,12 +34,67 @@ def trusted_hosts(host=None) -> list[str]:
     (DNS rebinding) would reach this API with the browser's trust, but its Host header still names that domain (review of
     2026-09-29). Allowed: loopback, the test client's `testserver`, and the --host the backend is served on. Starlette
     compares an IPv6 literal with its brackets ("[::1]:8765" -> "[::1]"). A wildcard --host is reached under names this
-    process cannot know (the machine's network address or name): the operator has chosen exposure, and nothing is checked."""
+    process cannot know (the machine's network address or name): the operator has chosen exposure, and no name is
+    checked. cross_site_write() needs no names and is asked there as everywhere."""
     if host in WILDCARD_HOSTS:
         return ['*']
     # browsers send a name in lower case
     names = [*LOOPBACK_HOSTS, 'testserver'] + ([host, host.lower()] if host else [])
     return list(dict.fromkeys(f'[{name}]' if ':' in name else name for name in names))
+
+
+def cross_site_write(method, fetch_site, origin, host) -> bool:
+    """Whether a request may change something AND was sent by a web page other than this backend's own: it is refused
+    (record 7.484). The API has no login and obeys whoever reaches its port, and a page of any site the user has open
+    can make the user's browser send a POST to 127.0.0.1 (cross-site request forgery). The browser keeps only the ANSWER
+    from that page; a run is started by then. The rule is that of Go 1.25's http.CrossOriginProtection. It decides from
+    the method and from three headers that the browser writes itself and no page can set, change or remove:
+    - GET, HEAD and OPTIONS pass. (The OPTIONS with which a browser asks leave for a foreign page's PUT, PATCH, DELETE
+      or JSON POST is answered 405 by the routes, which is a no.) One GET still changes something: the first GET
+      /api/local-agent starts the local Agent's one-time install (record 7.484 leaves it open).
+    - `fetch_site`, the Sec-Fetch-Site header, is the browser's own word on who asks: 'same-origin' is the page this
+      backend served, 'none' the user (address bar, bookmark). Every other value is refused, 'same-site' too: that is a
+      page of another port of this machine, so of another program.
+    - Without it, `origin` (the Origin header) must name the address the request itself was sent to: `host`, the Host
+      header. A browser leaves Sec-Fetch-Site out where the address is plain http under a machine name (a --host on the
+      network), and one older than Chrome 76, Firefox 90 or Safari 16.4 does not know it; Origin they send with every
+      request that is no GET or HEAD (Firefox before 70 not with a form's POST). 'null' (a sandboxed frame, a file
+      opened in the browser) names no address. The two headers are compared with each other, not with a list of names,
+      so the answer is right on a forwarded port (ssh -L 9000:127.0.0.1:8765) and under a wildcard --host, whose names
+      this process cannot know.
+    - Neither header: not a browser (curl, a script, the tests, an agent's command line), so no user's browser is
+      misused, and whoever reaches the port directly is obeyed anyway.
+    Sec-Fetch-Site is asked FIRST: behind the page's development proxy (vite rewrites Host to this backend, and Origin
+    still names the proxy) only the browser's own word says that the page is the right one.
+    Not decided here: a page whose NAME was made to resolve to this machine (DNS rebinding) is this backend's own page
+    to the browser. That is trusted_hosts()'s case alone, and it is asked before this."""
+    if method in READ_METHODS:
+        return False
+    if fetch_site:
+        return fetch_site not in OWN_PAGE
+    if not origin:
+        return False
+    scheme, _, address = origin.lower().partition('://')
+    return not (scheme in ('http', 'https') and bool(host) and address == host.lower())
+
+
+class CrossSiteWriteMiddleware:
+    """Answers a request that cross_site_write() names with 403, before a route or the request's body is read, in the
+    shape of this API's other refusals ({detail: {message, code}}): the page shows the message as it is. Several Origin
+    headers, which no browser sends, are joined and so name no address."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope['type'] == 'http':
+            headers = Headers(scope=scope)
+            if cross_site_write(scope['method'], headers.get('sec-fetch-site'), ','.join(headers.getlist('origin')),
+                                headers.get('host')):
+                refusal = JSONResponse(status_code=403, content=dict(detail=dict(message=CROSS_SITE_REFUSAL,
+                    code='cross_site_request')))
+                await refusal(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 def session_idle(profile_id) -> bool:
@@ -66,6 +129,9 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                 service.close()
     app = FastAPI(title='GATOR workbench', version=__version__, docs_url='/api/docs', openapi_url='/api/openapi.json',
                   lifespan=lifespan)
+    # Starlette runs the middleware added last first. The Host check is added last: a foreign Host is answered 400 as
+    # before, whatever the method, and cross_site_write() compares an Origin only with a Host that was accepted.
+    app.add_middleware(CrossSiteWriteMiddleware)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts(host))
     roots = OutputRoots(extra_output_roots)
     input_roots = [repo_root().resolve()] + [Path(p).expanduser().resolve() for p in extra_input_roots]

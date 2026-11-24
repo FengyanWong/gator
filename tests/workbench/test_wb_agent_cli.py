@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 from fastapi.testclient import TestClient
 import pytest
@@ -23,17 +24,22 @@ def executable(path, text='#!/bin/sh\nexit 0\n'):
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
-    """A home of its own (no ~/.local/bin/claude, no ~/.codex) and a PATH with nothing but the system's tools."""
+    """A home of its own (no ~/.local/bin/claude, no ~/.codex), and no Codex home exported by the tests' shell."""
     folder = tmp_path / 'home'
     folder.mkdir()
     monkeypatch.setenv('HOME', str(folder))
+    for name in ('CODEX_HOME', 'CODEX_SQLITE_HOME'):     # the Codex app's shell exports them (agent_cli.codex_home)
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(agent_cli, 'WINDOWS_USERS', tmp_path / 'no-windows-users')
     return folder
 
 
 def env(tmp_path, **extra):
-    """An environment as the backend may have it: WSL, a PATH of fakes first, Claude Code session markers inherited."""
-    return dict(PATH=f'{tmp_path / "bin"}:/usr/bin:/bin', WSL_DISTRO_NAME='Ubuntu', HOME=os.environ['HOME'], CLAUDECODE='1',
+    """An environment as the backend may have it: WSL, Claude Code session markers inherited. Its PATH holds the fakes
+    and nothing else: with /usr/bin on it, a claude, a codex or a terminal program installed there was found in place
+    of the fake, or where the test expects none (record 7.484). Nothing looked for here is run: no system tool is
+    needed."""
+    return dict(PATH=str(tmp_path / 'bin'), WSL_DISTRO_NAME='Ubuntu', HOME=os.environ['HOME'], CLAUDECODE='1',
                 CLAUDE_CODE_ENTRYPOINT='claude-desktop', WSLENV='GATOR_WORKBENCH_URL', **extra)
 
 
@@ -96,9 +102,13 @@ def test_the_start_script_is_the_cli_as_typed_in_the_folder_then_your_shell(tmp_
     script = tmp_path / 'codex.sh'
     script.write_text(agent_cli.start_script(found, folder))
     assert subprocess.run(['bash', '-n', str(script)]).returncode == 0
+    python = tmp_path / 'python'              # the fake's `#!/usr/bin/env python3` is this interpreter, on any machine
+    python.mkdir()
+    (python / 'python3').symlink_to(sys.executable)
     done = subprocess.run(['bash', str(script)], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60,
-                          env=dict(PATH='/usr/bin:/bin', HOME=str(home)))
+                          env=dict(PATH=f'{python}:/usr/bin:/bin', HOME=str(home)))
     assert done.returncode == 0, done.stderr
+    assert record.exists(), done.stderr       # `exec bash -li` ends the script with 0 even when the fake did not start
     seen = json.loads(record.read_text())
     assert seen['argv'] == [] and seen['cwd'] == str(folder)              # no option of the workbench's: your own settings
     assert seen['home'] == "/mnt/c/Users/o'neil/.codex" and seen['path'].startswith(str(tmp_path / 'build one') + ':')
@@ -203,7 +213,7 @@ def test_a_launch_that_cannot_happen_says_why_and_what_to_type(tmp_path, home):
 def test_the_routes_list_the_clis_and_open_one_dry(tmp_path, home, monkeypatch):
     executable(tmp_path / 'bin' / 'claude')
     executable(tmp_path / 'bin' / 'wt.exe')
-    monkeypatch.setenv('PATH', f'{tmp_path / "bin"}:/usr/bin:/bin')      # not the machine's PATH: a codex installed for the user made codex=False fail
+    monkeypatch.setenv('PATH', str(tmp_path / 'bin'))      # the fakes only: a codex anywhere on the machine's PATH made codex=False fail
     monkeypatch.setenv('WSL_DISTRO_NAME', 'Ubuntu')
     client = TestClient(workbench_app(tmp_path))
     listed = client.get('/api/agent/clis').json()

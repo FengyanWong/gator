@@ -432,3 +432,130 @@ def test_a_nul_byte_in_a_path_is_refused_like_any_other_bad_path(tmp_path):
     check = client.post('/api/output/check', json=dict(path=bad))
     assert check.status_code == 200 and check.json()['allowed'] is False and 'NUL' in check.json()['error']
     assert roots_for(tmp_path).is_allowed(bad) is False
+
+
+# ------------------------------------------------------------------------------- A17: writes from other sites' pages
+EVIL = 'https://evil.example'
+
+
+@pytest.mark.parametrize('method, fetch_site, origin, host, refused', [
+    # reading is never refused; a foreign page cannot read the answer anyway (no CORS header is ever sent)
+    ('GET', 'cross-site', EVIL, 'localhost:8765', False), ('HEAD', None, EVIL, 'localhost:8765', False),
+    ('OPTIONS', 'cross-site', EVIL, 'localhost:8765', False),
+    # the browser's own word (Sec-Fetch-Site) decides where it is there
+    ('POST', 'same-origin', 'http://localhost:8765', 'localhost:8765', False),
+    ('POST', 'none', None, 'localhost:8765', False),                                  # typed or bookmarked by the user
+    ('POST', 'same-origin', 'http://127.0.0.1:5174', '127.0.0.1:8765', False),        # behind vite: Host rewritten
+    ('POST', 'cross-site', EVIL, 'localhost:8765', True),                             # a form, no-cors fetch, beacon
+    ('POST', 'cross-site', 'null', 'localhost:8765', True),                           # sandboxed frame, file:// page
+    ('POST', 'cross-site', 'http://localhost:8765', 'localhost:8765', True),          # not overruled by an Origin
+    ('POST', 'same-site', 'http://localhost:3000', 'localhost:8765', True),           # another port: another program
+    ('DELETE', 'same-site', 'http://127.0.0.1:3000', '127.0.0.1:8765', True),
+    ('POST', 'Same-Origin', None, 'localhost:8765', True), ('POST', 'bogus', None, 'localhost:8765', True),
+    # no Sec-Fetch-Site (plain http under a machine name; an old browser): Origin must name the Host
+    ('POST', None, 'http://localhost:8765', 'localhost:8765', False),
+    ('POST', None, 'http://localhost:9000', 'localhost:9000', False),                 # ssh -L 9000:127.0.0.1:8765
+    ('POST', None, 'http://lab-pc.local:8765', 'lab-pc.local:8765', False),           # --host on the network
+    ('POST', None, 'http://labpc', 'labpc', False), ('POST', None, 'https://labpc', 'labpc', False),   # default ports
+    ('POST', None, 'http://[::1]:8765', '[::1]:8765', False),
+    ('POST', None, 'http://Lab-PC.local:8765', 'lab-pc.local:8765', False),           # a name's case does not matter
+    ('POST', None, EVIL, 'localhost:8765', True), ('PUT', None, EVIL, 'localhost:8765', True),
+    ('PATCH', None, EVIL, 'localhost:8765', True), ('DELETE', None, EVIL, 'localhost:8765', True),
+    ('POST', None, 'null', 'localhost:8765', True),
+    ('POST', None, 'http://localhost:3000', 'localhost:8765', True),                  # another port
+    ('POST', None, 'http://localhost', 'localhost:8765', True),
+    ('POST', None, 'http://127.0.0.1:8765', 'localhost:8765', True),                  # another name of this machine
+    ('POST', None, 'http://localhost:8765.evil.example', 'localhost:8765', True),
+    ('POST', None, 'http://localhost:8765@evil.example', 'localhost:8765', True),
+    ('POST', None, 'http://evil.example/localhost:8765', 'localhost:8765', True),
+    ('POST', None, 'http://localhost:8765/', 'localhost:8765', True),                 # no browser writes a path
+    ('POST', None, 'http://localhost:8765,http://localhost:8765', 'localhost:8765', True),   # two headers, joined
+    ('POST', None, 'localhost:8765', 'localhost:8765', True),
+    ('POST', None, 'chrome-extension://localhost:8765', 'localhost:8765', True),
+    ('POST', None, 'http://localhost:8765', None, True), ('POST', None, 'http://', '', True),   # no Host to compare
+    ('post', None, EVIL, 'localhost:8765', True),                                     # no method is safe by spelling
+    # neither header: not a browser (curl, a script, these tests, an agent's command line)
+    ('POST', None, None, 'localhost:8765', False), ('DELETE', None, '', 'localhost:8765', False),
+    ('POST', '', '', 'localhost:8765', False),
+])
+def test_which_requests_count_as_another_sites_write(method, fetch_site, origin, host, refused):
+    assert app_module.cross_site_write(method, fetch_site, origin, host) is refused
+
+
+def test_a_write_from_a_page_of_another_site_is_refused_and_changes_nothing(tmp_path):
+    client = TestClient(workbench_app(tmp_path))
+    kept = client.post('/api/task-folders', json={'name': 'kept'}).json()['created_id']
+    before = client.get('/api/task-folders').json()
+    for headers in ({'Origin': EVIL}, {'Origin': 'null'}, {'Sec-Fetch-Site': 'cross-site'},
+                    {'Sec-Fetch-Site': 'cross-site', 'Origin': 'http://testserver'},
+                    {'Sec-Fetch-Site': 'same-site', 'Origin': 'http://testserver:3000'},
+                    [('Origin', 'http://testserver'), ('Origin', 'http://testserver')]):
+        reply = client.post('/api/task-folders', json={'name': 'planted'}, headers=headers)
+        assert reply.status_code == 403, headers
+        # the shape of fail(): the page shows detail.message as it is (frontend/src/api.ts, ApiError)
+        assert reply.json()['detail']['code'] == 'cross_site_request', headers
+        assert reply.json()['detail']['message'] == app_module.CROSS_SITE_REFUSAL
+        # what a page can send without the browser asking first: a JSON text with no Content-Type (fetch no-cors, a Blob)
+        assert client.post('/api/task-folders', content=b'{"name": "planted"}', headers=headers).status_code == 403
+        assert client.patch(f'/api/task-folders/{kept}', json={'name': 'renamed'}, headers=headers).status_code == 403
+        assert client.delete(f'/api/task-folders/{kept}', headers=headers).status_code == 403
+        assert client.put('/api/task-folders/assign', json={'task_keys': ['real:a'], 'folder_id': kept},
+                          headers=headers).status_code == 403
+    assert client.get('/api/task-folders').json() == before and before['folders'] == {kept: 'kept'}
+
+
+def test_the_page_and_a_command_line_still_write(tmp_path):
+    client = TestClient(workbench_app(tmp_path))
+    for name, headers in dict(
+            command_line={},                                                                       # curl, the tests
+            node_fetch={'Sec-Fetch-Mode': 'cors'},                                                 # frontend/scripts
+            page={'Origin': 'http://testserver', 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors'},
+            page_old_browser={'Origin': 'http://testserver'},
+            page_on_a_forwarded_port={'Host': 'localhost:9000', 'Origin': 'http://localhost:9000'},
+            page_behind_vite={'Host': '127.0.0.1:8765', 'Origin': 'http://127.0.0.1:5174', 'Sec-Fetch-Site': 'same-origin'},
+    ).items():
+        made = client.post('/api/task-folders', json={'name': name}, headers=headers)
+        assert made.status_code == 200, name
+        assert client.delete(f"/api/task-folders/{made.json()['created_id']}", headers=headers).status_code == 200, name
+    assert client.get('/api/task-folders').json()['folders'] == {}
+
+
+def test_reading_is_not_refused_and_no_foreign_page_is_given_leave(tmp_path):
+    client = TestClient(workbench_app(tmp_path))
+    foreign = {'Origin': EVIL, 'Sec-Fetch-Site': 'cross-site'}
+    read = client.get('/api/task-folders', headers=foreign)
+    assert read.status_code == 200 and not [name for name in read.headers if name.lower().startswith('access-control-')]
+    # the question a browser asks before a foreign page's PUT, PATCH, DELETE or JSON POST: answered with a no, as before
+    asked = client.options('/api/task-folders', headers={**foreign, 'Access-Control-Request-Method': 'DELETE'})
+    assert asked.status_code == 405 and not [name for name in asked.headers if name.lower().startswith('access-control-')]
+
+
+def test_a_foreign_host_is_answered_by_the_host_check_before_the_origin_is_looked_at(tmp_path):
+    client = TestClient(workbench_app(tmp_path))
+    # DNS rebinding: to the browser the page IS this backend's (Origin names the Host), so only the Host check refuses it
+    rebound = {'Host': 'rebound.example:8765', 'Origin': 'http://rebound.example:8765'}
+    reply = client.post('/api/task-folders', json={'name': 'planted'}, headers=rebound)
+    assert (reply.status_code, reply.text) == (400, 'Invalid host header')
+    assert client.post('/api/task-folders', json={'name': 'planted'}, headers={**rebound, 'Origin': EVIL}).status_code == 400
+    assert client.get('/api/task-folders').json()['folders'] == {}
+
+
+def test_a_wildcard_host_still_refuses_another_sites_write(tmp_path):
+    client = TestClient(workbench_app(tmp_path, host='0.0.0.0'))             # no Host name is checked there (A15)
+    named = {'Host': 'lab-pc.local:8765'}
+    assert client.post('/api/task-folders', json={'name': 'planted'}, headers={**named, 'Origin': EVIL}).status_code == 403
+    assert client.post('/api/task-folders', json={'name': 'planted'}, headers={**named, 'Origin': 'null'}).status_code == 403
+    assert client.get('/api/task-folders', headers=named).json()['folders'] == {}
+    own = client.post('/api/task-folders', json={'name': 'own'}, headers={**named, 'Origin': 'http://lab-pc.local:8765'})
+    assert own.status_code == 200
+
+
+def test_a_json_body_without_its_content_type_is_not_read(tmp_path):
+    """The second line of defence, FastAPI's own since 0.132 (pyproject.toml asks for 0.133 or later): a request that no
+    browser marked, with neither Sec-Fetch-Site nor Origin, passes cross_site_write(), and a page of another site in
+    such a browser can send JSON without the browser asking first only with no Content-Type or as text/plain."""
+    client = TestClient(workbench_app(tmp_path))
+    assert client.post('/api/task-folders', content=b'{"name": "planted"}').status_code == 422
+    as_text = client.post('/api/task-folders', content=b'{"name": "planted"}', headers={'Content-Type': 'text/plain'})
+    assert as_text.status_code == 422
+    assert client.get('/api/task-folders').json()['folders'] == {}

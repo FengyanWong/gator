@@ -1,0 +1,30 @@
+# Once a week GitHub runs the steps of tests.yml on the newest commit of main, without a push.
+#
+# Why: constraints.txt pins four libraries. Every other Python library is installed in the newest release that its
+# requirements allow, so a new release can make the tests of a fresh install fail on a day when nothing is pushed
+# (pytest 9.2.0 did: record 7.475). This run notices that within a week. The page's libraries do not move: `npm ci`
+# installs what frontend/package-lock.json names.
+#
+# Why a file of its own: in a public repository GitHub switches a workflow with a schedule off after 60 days without
+# activity in the repository. Kept here, that can only stop the weekly run, never the run at a push, which is
+# tests.yml. "Enable workflow" on the Actions tab switches this file on again.
+#
+# - A schedule runs only from the file on the default branch, main, and tests no other branch.
+# - Monday, 04:23 UTC: off the hour, because GitHub starts scheduled runs late, or drops them, when many are due.
+# - When a weekly run fails, GitHub tells whoever last changed the cron line, or last switched this file on again.
+# - The download caches that tests.yml keeps do not hide a new release: pip asks the package index for the list of
+#   versions at every install; a kept copy only spares the download when nothing changed.
+name: Tests, weekly
+
+on:
+  schedule:
+    - cron: "23 4 * * 1"    # Mondays at 04:23 UTC
+  workflow_dispatch:        # the "Run workflow" button: try this file by hand
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Weekly
+    uses: ./.github/workflows/tests.yml

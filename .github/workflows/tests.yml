@@ -1,5 +1,7 @@
-# GitHub runs this on its own machines at every push and every pull request. It is the README's "Install and run",
-# steps 2 to 4, on a fresh checkout: install, build the browser page, run the tests. Change the two together.
+# GitHub runs this on its own machines at every push and every pull request, and once a week (tests-weekly.yml starts
+# it then). It is the README's "Install and run", steps 2 to 4, on a fresh checkout: install, build the browser page,
+# run the tests. Change the two together. Not among the README's steps: ngspice, the page's unit tests and the second
+# test step, each explained below.
 #
 # Why each choice:
 # - ubuntu-24.04, not ubuntu-latest: the tests were tried with this release's ngspice (version 42), and a later
@@ -8,6 +10,9 @@
 # - ngspice from apt: with it the five tests that run the real ngspice program run too; without it they are skipped.
 # - No simulator licence, PDK, saved model or recorded run data is used or needed: the tests that read recorded
 #   evidence skip themselves, as they do on any fresh clone.
+# - The page's unit tests: Node.js runs the two test files by itself, in under a second. It reads the page's
+#   TypeScript sources as they are, which a recent Node.js does (24 here, and 22.23 when tried). Older ones cannot,
+#   among them the 18 and 20 that the README allows for the build, which is why the step is not among the README's.
 # - The second test step: a few tests are known to fail by timing when the machine is busy (records 7.196 and
 #   7.437 name five; record 7.483 saw two of them fail), and this machine has four processors for four test
 #   processes. So the tests that failed are run once more, one at a time. A test that really fails, fails there
@@ -19,12 +24,15 @@ on:
     branches: ["**"]        # every branch; a pushed tag does not test the same commit a second time
   pull_request:
   workflow_dispatch:        # the "Run workflow" button on the Actions tab
+  workflow_call:            # tests-weekly.yml runs these same steps once a week
 
 permissions:
   contents: read
 
 concurrency:
-  group: tests-${{ github.event_name }}-${{ github.ref }}
+  # The workflow's name keeps a weekly run (named after its caller, tests-weekly.yml) and a run started by hand on the
+  # same branch from cancelling each other.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true  # a newer push to the same branch replaces the run of the older one
 
 jobs:
@@ -67,6 +75,9 @@ jobs:
 
       - name: Build the browser page
         run: (cd frontend && npm ci && npm run build)
+
+      - name: Run the page's unit tests
+        run: (cd frontend && npm run test:unit)
 
       - name: Run the tests
         id: tests

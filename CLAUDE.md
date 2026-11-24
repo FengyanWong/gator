@@ -90,12 +90,16 @@ imported, but a script using `gator_workbench` directly writes the user's live s
 `/mnt/d` is a 9p mount: a `stat` right after an atomic rename can transiently fail; use
 `gator_workbench.storage.atomic` for writes.
 
-GitHub runs the README's steps 2 to 4 (install, page build, the full regression with `-n 4`) at every push and pull
-request: `.github/workflows/tests.yml`, on Ubuntu 24.04 with Python 3.10, Node.js 24 and ngspice from apt (record
-7.483). When the README's install or test commands, the extras in `pyproject.toml` or `constraints.txt` change, change
-the workflow in the same commit. Its second test step runs the tests that failed once more, one at a time, because
-a few tests fail by timing on a busy machine (records 7.196 and 7.437); it keeps `--dist loadgroup`, without which
-`--last-failed` does not find a grouped test again and passes without running it. Pushing a changed workflow file
-needs a token with the `workflow` scope (`gh auth status`). `CITATION.cff` says how to cite GATOR: keep it and the
-README's "Citing and licence" saying the same. The version in `pyproject.toml` stays 0.1.0 as long as
-`src/analog_optimizer/__init__.py` says 0.1.0: that file is under the source digest.
+GitHub runs the README's steps 2 to 4 (install, page build, the full regression with `-n 4`) and the page's unit tests
+(`npm run test:unit`) at every push and pull request: `.github/workflows/tests.yml`, on Ubuntu 24.04 with Python 3.10,
+Node.js 24 and ngspice from apt (records 7.483 and 7.484). `.github/workflows/tests-weekly.yml` runs the same steps
+every Monday on the newest commit of `main`, to catch a new release of a library that `constraints.txt` does not pin;
+a schedule works only from the file on `main`, and GitHub switches it off after 60 days without activity in the
+repository ("Enable workflow" on the Actions tab). When the README's install or test commands, the `test:unit` script
+in `frontend/package.json`, the extras in `pyproject.toml` or `constraints.txt` change, change `tests.yml` in the same
+commit. Its second test step runs the tests that failed once more, one at a time, because a few tests fail by timing
+on a busy machine (records 7.196 and 7.437); it keeps `--dist loadgroup`, without which `--last-failed` does not find
+a grouped test again and passes without running it. Pushing a changed workflow file needs a token with the `workflow`
+scope (`gh auth status`). `CITATION.cff` says how to cite GATOR: keep it and the README's "Citing and licence" saying
+the same. The version in `pyproject.toml` stays 0.1.0 as long as `src/analog_optimizer/__init__.py` says 0.1.0: that
+file is under the source digest.

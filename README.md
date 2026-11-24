@@ -63,7 +63,7 @@ What it does not do, or needs:
   setting, under Limits in Run configuration.
 - The server has no login. It listens only on its own machine unless you start it with another `--host`. With the
   default `--host`, it also refuses requests to start a run or change a task that a web page of another site sends
-  through your browser.
+  through your browser. No other site can show the page inside its own to catch your clicks.
 - The page's Agent tab is optional and only advises. A suggestion goes through the normal editor as one change that
   you can undo, and the Agent never starts a simulation. Its adviser on parameter setup and optimisation settings is
   a local language model, an NVIDIA Nemotron model on your own GPU. It runs through a pinned llama.cpp build for

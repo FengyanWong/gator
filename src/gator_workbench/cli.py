@@ -76,7 +76,7 @@ def _serve(args):
     app = create_app(extra_output_roots=args.allow_root, extra_input_roots=args.allow_input_root,
                      connection_stale_seconds=args.connection_stale_seconds,
                      auto_check_on_start=args.connection_check_on_start, host=args.host)
-    print(f'GATOR workbench: http://{args.host}:{args.port}   (API docs: /api/docs)', flush=True)
+    print(f'GATOR workbench: http://{args.host}:{args.port}   (API schema: /api/openapi.json)', flush=True)
     uvicorn.run(app, host=args.host, port=args.port, log_level='info', timeout_graceful_shutdown=SHUTDOWN_GRACE_SECONDS)
     return 0
 

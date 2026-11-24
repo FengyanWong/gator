@@ -559,3 +559,77 @@ def test_a_json_body_without_its_content_type_is_not_read(tmp_path):
     as_text = client.post('/api/task-folders', content=b'{"name": "planted"}', headers={'Content-Type': 'text/plain'})
     assert as_text.status_code == 422
     assert client.get('/api/task-folders').json()['folders'] == {}
+
+
+# ------------------------------------------------------------------------------- A18: a read that changes, framing, docs
+@pytest.mark.parametrize('method, fetch_site, path, refused', [
+    ('GET', 'cross-site', '/api/local-agent', True),                 # an <img> of a page of another site
+    ('HEAD', 'cross-site', '/api/local-agent', True),
+    ('GET', 'cross-site', '/api/local-agent/', True),                # the same address with a trailing slash
+    ('GET', 'same-site', '/api/local-agent', True),                  # a page of another program on this machine
+    ('GET', 'same-origin', '/api/local-agent', False),               # the page's own Agent tab
+    ('GET', 'none', '/api/local-agent', True),                       # a navigation the browser starts: a redirect too
+    ('GET', None, '/api/local-agent', False),                        # no header: curl, the tests, a browser without it
+    ('OPTIONS', 'cross-site', '/api/local-agent', False),            # a browser's question: the routes answer 405
+    ('GET', 'cross-site', '/api/local-agent/jobs/abc', False),       # other reads stay unchecked
+    ('GET', 'cross-site', '/api/task-folders', False),
+])
+def test_the_read_that_changes_something_is_decided_like_a_write(method, fetch_site, path, refused):
+    assert app_module.cross_site_write(method, fetch_site, None, 'localhost:8765', path) is refused
+
+
+class AgentSpy:
+    """Stands in for the local Agent's manager and counts its bootstraps, the start of the one-time install."""
+    def __init__(self):
+        self.bootstraps = 0
+
+    def bootstrap(self):
+        self.bootstraps += 1
+
+    def status(self):
+        return dict(deployed=None)
+
+    def close(self):
+        pass
+
+
+def test_a_page_of_another_site_cannot_start_the_local_agents_install(tmp_path):
+    app = workbench_app(tmp_path)
+    app.state.local_agent = spy = AgentSpy()
+    client = TestClient(app)
+    image = {'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'no-cors', 'Sec-Fetch-Dest': 'image'}
+    refused = client.get('/api/local-agent', headers=image)
+    assert refused.status_code == 403 and refused.json()['detail']['code'] == 'cross_site_request'
+    assert client.head('/api/local-agent', headers=image).status_code == 403
+    # a link opened from mail or chat and redirected here by a foreign site: the browser started it, so it says 'none'
+    assert client.get('/api/local-agent', headers={'Sec-Fetch-Site': 'none', 'Sec-Fetch-Mode': 'navigate'}).status_code == 403
+    assert spy.bootstraps == 0
+    own = client.get('/api/local-agent', headers={'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors'})
+    assert own.json() == dict(deployed=None)                         # the Agent tab, as before
+    assert client.get('/api/local-agent').status_code == 200         # a command line, as before
+    assert spy.bootstraps == 2
+
+
+def test_every_answer_forbids_other_sites_to_frame_the_page(tmp_path):
+    app = workbench_app(tmp_path)
+
+    @app.get('/api/fails-for-this-test')
+    def fails():
+        raise RuntimeError('planted')
+    client = TestClient(app, raise_server_exceptions=False)
+    for reply in (client.get('/api/task-folders'),
+                  client.post('/api/task-folders', json={'name': 'planted'}, headers={'Origin': EVIL}),
+                  client.get('/api/task-folders', headers={'Host': 'rebound.example'}),
+                  client.get('/api/no-such-route'),
+                  client.get('/api/fails-for-this-test')):                # the 500 handler runs outside the middleware
+        assert reply.status_code in (200, 403, 400, 404, 500)
+        assert reply.headers['x-frame-options'] == 'DENY', reply.status_code
+        assert reply.headers['content-security-policy'] == "frame-ancestors 'none'", reply.status_code
+    assert client.get('/api/task-folders').json()['folders'] == {}
+
+
+def test_the_documentation_pages_that_load_scripts_from_a_cdn_are_off(tmp_path):
+    client = TestClient(workbench_app(tmp_path))
+    for path in ('/api/docs', '/redoc', '/docs', '/docs/oauth2-redirect'):
+        assert client.get(path).status_code == 404, path
+    assert client.get('/api/openapi.json').json()['info']['title'] == 'GATOR workbench'          # the schema stays

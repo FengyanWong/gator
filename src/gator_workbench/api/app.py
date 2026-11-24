@@ -7,7 +7,7 @@ import time
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.datastructures import Headers
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .. import __version__, bridge_connect, connection, consistency, launch_requests, runs
 from ..names import LOOPBACK_HOSTS
@@ -21,7 +21,13 @@ from .support import attachment, file_snapshot  # compatibility exports
 WILDCARD_HOSTS = ('0.0.0.0', '::', '')
 ACTIVE_RUN_REUSE_SECONDS = 3.0                   # how long one look for a run that works on a connection serves (7.279)
 READ_METHODS = ('GET', 'HEAD', 'OPTIONS')        # every other method may change something (cross_site_write, 7.484)
+# The reads that change something, decided like a write (7.485): the first GET /api/local-agent starts the local Agent's
+# one-time install (local_agent_routes.status -> Manager.bootstrap).
+READS_THAT_CHANGE = ('/api/local-agent',)
 OWN_PAGE = ('same-origin', 'none')               # Sec-Fetch-Site: the page this backend served; the user's own typing
+# On every answer (NoFramingMiddleware, and the 500 of an unexpected error, which passes outside it; 7.485): no page of
+# another site may show this one inside its own.
+NO_FRAMING = (('X-Frame-Options', 'DENY'), ('Content-Security-Policy', "frame-ancestors 'none'"))
 CROSS_SITE_REFUSAL = (
     'Refused, and nothing was changed: this request was sent by a web page that is not the page of this workbench (a '
     'page of another site, a page of another program on this machine, or a file opened in the browser). If you are '
@@ -43,15 +49,20 @@ def trusted_hosts(host=None) -> list[str]:
     return list(dict.fromkeys(f'[{name}]' if ':' in name else name for name in names))
 
 
-def cross_site_write(method, fetch_site, origin, host) -> bool:
+def cross_site_write(method, fetch_site, origin, host, path='') -> bool:
     """Whether a request may change something AND was sent by a web page other than this backend's own: it is refused
     (record 7.484). The API has no login and obeys whoever reaches its port, and a page of any site the user has open
     can make the user's browser send a POST to 127.0.0.1 (cross-site request forgery). The browser keeps only the ANSWER
     from that page; a run is started by then. The rule is that of Go 1.25's http.CrossOriginProtection. It decides from
     the method and from three headers that the browser writes itself and no page can set, change or remove:
     - GET, HEAD and OPTIONS pass. (The OPTIONS with which a browser asks leave for a foreign page's PUT, PATCH, DELETE
-      or JSON POST is answered 405 by the routes, which is a no.) One GET still changes something: the first GET
-      /api/local-agent starts the local Agent's one-time install (record 7.484 leaves it open).
+      or JSON POST is answered 405 by the routes, which is a no.) Not so a GET or HEAD of a `path` in
+      READS_THAT_CHANGE: the first GET /api/local-agent starts the local Agent's one-time install (record 7.485). Where
+      the browser sends Sec-Fetch-Site, such a read passes only as 'same-origin', the page itself: 'none' marks any
+      navigation the browser starts by itself, a link opened from mail or chat too, and it stays 'none' when a foreign
+      site redirects that navigation here. An image's GET sends no Origin, so where the browser sends no Sec-Fetch-Site
+      (plain http under a machine name, an old browser) a foreign page's <img> passes as a command line does: no header
+      tells it from the page's own request there.
     - `fetch_site`, the Sec-Fetch-Site header, is the browser's own word on who asks: 'same-origin' is the page this
       backend served, 'none' the user (address bar, bookmark). Every other value is refused, 'same-site' too: that is a
       page of another port of this machine, so of another program.
@@ -68,10 +79,11 @@ def cross_site_write(method, fetch_site, origin, host) -> bool:
     still names the proxy) only the browser's own word says that the page is the right one.
     Not decided here: a page whose NAME was made to resolve to this machine (DNS rebinding) is this backend's own page
     to the browser. That is trusted_hosts()'s case alone, and it is asked before this."""
-    if method in READ_METHODS:
+    changes = method in ('GET', 'HEAD') and path.rstrip('/') in READS_THAT_CHANGE
+    if method in READ_METHODS and not changes:
         return False
     if fetch_site:
-        return fetch_site not in OWN_PAGE
+        return fetch_site != 'same-origin' if changes else fetch_site not in OWN_PAGE
     if not origin:
         return False
     scheme, _, address = origin.lower().partition('://')
@@ -89,12 +101,35 @@ class CrossSiteWriteMiddleware:
         if scope['type'] == 'http':
             headers = Headers(scope=scope)
             if cross_site_write(scope['method'], headers.get('sec-fetch-site'), ','.join(headers.getlist('origin')),
-                                headers.get('host')):
+                                headers.get('host'), scope.get('path', '')):
                 refusal = JSONResponse(status_code=403, content=dict(detail=dict(message=CROSS_SITE_REFUSAL,
                     code='cross_site_request')))
                 await refusal(scope, receive, send)
                 return
         await self.app(scope, receive, send)
+
+
+class NoFramingMiddleware:
+    """Puts NO_FRAMING on the answers (record 7.485): `X-Frame-Options: DENY` for older browsers, `frame-ancestors
+    'none'` for the others. A page of another site could otherwise show this page inside its own, hidden or disguised,
+    and lure the user's clicks into it; those clicks are the page's own requests, which cross_site_write() lets through.
+    Nothing in the workbench frames itself: its windows are pop-ups. Added last, so it wraps the other checks and their
+    refusals carry the headers too."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope['type'] != 'http':
+            await self.app(scope, receive, send)
+            return
+
+        async def framed_never(message):
+            if message['type'] == 'http.response.start':
+                headers = MutableHeaders(scope=message)
+                for name, value in NO_FRAMING:
+                    headers.append(name, value)
+            await send(message)
+        await self.app(scope, receive, framed_never)
 
 
 def session_idle(profile_id) -> bool:
@@ -127,12 +162,16 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         finally:
             if service := getattr(app.state, 'local_agent', None):
                 service.close()
-    app = FastAPI(title='GATOR workbench', version=__version__, docs_url='/api/docs', openapi_url='/api/openapi.json',
-                  lifespan=lifespan)
-    # Starlette runs the middleware added last first. The Host check is added last: a foreign Host is answered 400 as
-    # before, whatever the method, and cross_site_write() compares an Origin only with a Host that was accepted.
+    # No documentation pages (record 7.485): FastAPI's /api/docs and /redoc load their scripts from a CDN into this
+    # backend's address, where cross_site_write() trusts every script as the page's own. The schema stays.
+    app = FastAPI(title='GATOR workbench', version=__version__, docs_url=None, redoc_url=None,
+                  openapi_url='/api/openapi.json', lifespan=lifespan)
+    # Starlette runs the middleware added last first. The Host check is added after the cross-site check: a foreign
+    # Host is answered 400 as before, whatever the method, and cross_site_write() compares an Origin only with a Host
+    # that was accepted. The framing headers are added last, so every answer carries them, refusals included.
     app.add_middleware(CrossSiteWriteMiddleware)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts(host))
+    app.add_middleware(NoFramingMiddleware)
     roots = OutputRoots(extra_output_roots)
     input_roots = [repo_root().resolve()] + [Path(p).expanduser().resolve() for p in extra_input_roots]
 
@@ -194,8 +233,9 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     # Return a bounded, redacted error response for uncaught request failures.
     @app.exception_handler(Exception)
     async def unexpected(request, exc):
+        # Starlette runs this handler outside every added middleware, so NoFramingMiddleware never sees its answer.
         return JSONResponse(status_code=500, content=dict(detail=dict(message=redact(f'{type(exc).__name__}: {exc}',
-            1000))))
+            1000))), headers=dict(NO_FRAMING))
 
     dist = repo_root() / 'frontend' / 'dist'
     if serve_frontend and dist.is_dir():

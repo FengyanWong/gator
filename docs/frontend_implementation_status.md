@@ -563,3 +563,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.483 | A test run on GitHub at every push and pull request (the README's install, build and test steps, with a second try for tests that fail by timing); a citation file; the package's description brought up to date; `test.txt` removed and the specification moved to `docs/`; a local tag for the finished experiments; record 7.482 committed |
 | 7.484 | A write sent by another site's page is refused; eight tests freed of their machine; the page's unit tests and a weekly run on GitHub; FastAPI 0.133 and Starlette 1.7 at least; records 7.482 and 7.483 seen on GitHub |
 | 7.485 | Three cross-site gaps closed: the local Agent's first status request, framing, the documentation pages; the record log rolled over; the push to `main` refused |
+| 7.486 | The pause timing test made deterministic: one lane for one cancelled candidate, both lanes held for two; the engine was right |

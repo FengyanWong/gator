@@ -765,3 +765,5 @@ One row per commit, newest last.
 | `72c35f5` | 11-24 19:09 | 7.484 | A write from another site's page is refused; eight tests freed of the machine; the page's unit tests and a weekly run on GitHub (record 7.484) |
 | `f5336a1` | 11-24 19:09 | 7.484 | Record 7.484: a write from another site's page refused, eight tests freed of the machine, the page's unit tests and a weekly run on GitHub; records 7.482 and 7.483 seen on GitHub |
 | `5b7b063` | 11-24 22:30 | 7.485 | Server: the local Agent's first status request, framing and the documentation pages closed to other sites (record 7.485) |
+| `1321609` | 11-24 22:31 | 7.485 | Record 7.485: three cross-site gaps closed (the local Agent's first status request, framing, the documentation pages); the record log rolled over; the push to main refused |
+| `94a09ae` | 11-25 00:44 | 7.486 | Tests: the pause timing test made deterministic, one lane for one cancelled candidate and both lanes held for two (record 7.486) |

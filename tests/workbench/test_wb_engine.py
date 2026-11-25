@@ -574,13 +574,15 @@ def test_a_run_paused_for_infrastructure_failures_continues_when_resumed(tmp_pat
 
 
 def test_a_candidate_a_pause_stops_before_its_launch_is_cancelled_not_a_failure_of_the_link(tmp_path, monkeypatch):
+    """One lane, so exactly one candidate is on its way when Pause is pressed (record 7.135's fix). With two lanes the
+    other lane's candidate can be on its way too, and is stopped as well: the next test holds both (record 7.486)."""
     from analog_optimizer.envs.sizing import CircuitSizingEnv
-    layout, _ = runs.prepare_run(make_config(tmp_path, threshold=1.5, run=dict(max_evaluations=40, concurrency=2)),
+    layout, _ = runs.prepare_run(make_config(tmp_path, threshold=1.5, run=dict(max_evaluations=40, concurrency=1)),
                                  roots_for(tmp_path))
     authorize, calls = CircuitSizingEnv.authorize_launches, {}
 
     def pause_on_the_way(env, allowance, *, stop_file=None):
-        """Request a pause during candidate authorization and wait for the lane's stop signal."""
+        """Request a pause during candidate authorization and wait for the run's stop signal."""
         authorize(env, allowance, stop_file=stop_file)
         calls[id(env)] = calls.get(id(env), 0) + (allowance > 0)
         if calls[id(env)] == 3 and 'paused' not in calls:       # Pause is pressed while this candidate is on its way
@@ -595,6 +597,47 @@ def test_a_candidate_a_pause_stops_before_its_launch_is_cancelled_not_a_failure_
     stopped = [e for e in evaluations if e['status'] == 'cancelled']
     assert len(stopped) == 1 and stopped[0]['failure_type'] == 'cancelled'
     assert 'stopped before nominal evaluation' in stopped[0]['diagnostics']
+    assert stopped[0]['dispatch_index'] == max(e['dispatch_index'] for e in evaluations)       # the run's last candidate
+    assert not [e for e in evaluations if e['failure_type'] and e['failure_type'].startswith('infrastructure')]
+
+
+def test_a_pause_stops_the_candidate_on_its_way_in_every_lane(tmp_path, monkeypatch):
+    """Two lanes, each holding its third candidate between authorization and launch when Pause is pressed: both are
+    stopped before their launch, each recorded as cancelled, and neither lane gets another candidate. The scheduler
+    hands both lanes their next candidates together when both finish together; the one test with two lanes that stood
+    here expected one cancellation and failed by timing when the other lane's candidate had not reached its launch yet
+    as Pause was pressed (records 7.196, 7.483, 7.486)."""
+    from analog_optimizer.envs.sizing import CircuitSizingEnv
+    layout, _ = runs.prepare_run(make_config(tmp_path, threshold=1.5, run=dict(max_evaluations=40, concurrency=2)),
+                                 roots_for(tmp_path))
+    authorize, lock, counts, held, both_held = (CircuitSizingEnv.authorize_launches, threading.Lock(), {}, [],
+                                                threading.Event())
+
+    def hold_on_the_way(env, allowance, *, stop_file=None):
+        """Each lane's third candidate waits here, authorized and not launched, until the other lane's waits too; the
+        second to arrive presses Pause, and both wait for the run's stop signal."""
+        authorize(env, allowance, stop_file=stop_file)
+        with lock:
+            counts[id(env)] = counts.get(id(env), 0) + (allowance > 0)
+            if counts[id(env)] != 3 or allowance <= 0:
+                return
+            held.append(id(env))
+            if len(held) == 2:
+                runs.send_command(layout.run_dir, 'pause')
+                both_held.set()
+        if not both_held.wait(30):                  # the other lane never came: no Pause, the run completes, the
+            return                                  # asserts say so
+        deadline = time.monotonic() + 30
+        while not Path(stop_file).exists() and time.monotonic() < deadline:
+            time.sleep(0.005)
+    monkeypatch.setattr(CircuitSizingEnv, 'authorize_launches', hold_on_the_way)
+    assert run_prepared(layout) == 'paused' and summary(layout)['stop_reason'] == 'user_pause'
+    evaluations = rows(layout, 'evaluations')
+    stopped = [e for e in evaluations if e['status'] == 'cancelled']
+    assert sorted(e['worker_id'] for e in stopped) == ['0', '1'], [(e['worker_id'], e['status']) for e in evaluations]
+    for one in stopped:
+        assert one['failure_type'] == 'cancelled' and 'stopped before nominal evaluation' in one['diagnostics']
+        assert one['dispatch_index'] == max(e['dispatch_index'] for e in evaluations if e['worker_id'] == one['worker_id'])
     assert not [e for e in evaluations if e['failure_type'] and e['failure_type'].startswith('infrastructure')]
 
 
